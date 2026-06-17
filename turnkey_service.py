@@ -1,25 +1,32 @@
 """
-Turnkey Service - Embedded Wallet Management
+Turnkey Service - Organization Wallet Management
 
-This module provides functionality for creating and managing embedded wallets
-using Turnkey's MPC-based infrastructure.
+NOTE: This is the SERVER-SIDE SDK for Turnkey. This is designed for:
+- Company/organizational wallet management
+- Administrative operations
+- Backend transaction signing
+
+For TRUE EMBEDDED WALLETS with email authentication for end users,
+Turnkey recommends their frontend SDK (@turnkey/react-wallet-kit).
 
 Reference: https://docs.turnkey.com/solutions/company-wallets/integration-guide/python
 """
 import logging
-from typing import Optional
+from typing import Optional, List
 from turnkey_http import TurnkeyClient
 from turnkey_api_key_stamper import ApiKeyStamper, ApiKeyStamperConfig
 from turnkey_sdk_types import (
-    CreateUsersBody,
     CreateWalletBody,
     GetWalletAccountBody,
     GetWalletsBody,
     ExportWalletBody,
-    CreatePrivateKeysBody,
-    PrivateKeyExportFormat,
-    CurveType,
-    WalletType
+    GetWalletBody,
+    CreateWalletAccountsBody,
+    v1WalletAccountParams,
+    v1Curve,
+    v1PathFormat,
+    v1AddressFormat,
+    ExportPrivateKeyBody
 )
 from config import (
     TURNKEY_API_PUBLIC_KEY,
@@ -32,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class TurnkeyService:
-    """Service for interacting with Turnkey API for embedded wallet management."""
+    """Service for interacting with Turnkey API for organization wallet management."""
 
     def __init__(self):
         """Initialize Turnkey client with API credentials."""
@@ -73,21 +80,14 @@ class TurnkeyService:
 
         return self._client
 
-    def create_user_and_wallet(
+    def create_wallet(
         self,
-        user_email: str,
-        user_name: str = "GoodMarket User",
         wallet_name: str = "GoodMarket Wallet"
     ) -> dict:
         """
-        Create a new user and associated wallet in Turnkey.
-
-        This method creates both a user and a wallet in a single flow.
-        For embedded wallets, we use Turnkey's sub-organization feature.
+        Create a new wallet under the organization.
 
         Args:
-            user_email: User's email address for authentication
-            user_name: Display name for the user
             wallet_name: Name for the wallet
 
         Returns:
@@ -101,48 +101,29 @@ class TurnkeyService:
             }
 
         try:
-            # Step 1: Create user
-            user_body = CreateUsersBody(
-                user_email=user_email,
-                user_name=user_name
+            # Create wallet with Ethereum account
+            # BIP44 path for Ethereum: m/44'/60'/0'/0/0
+            account_params = v1WalletAccountParams(
+                curve=v1Curve.CURVE_SECP256K1,
+                pathFormat=v1PathFormat.PATH_FORMAT_BIP32,
+                path="m/44'/60'/0'/0/0",
+                addressFormat=v1AddressFormat.ADDRESS_FORMAT_ETHEREUM
             )
-            user_response = client.create_users(user_body)
-            
-            # Extract user ID from response
-            user_id = None
-            if hasattr(user_response, 'users') and user_response.users:
-                user_id = user_response.users[0].user_id
-            
-            if not user_id:
-                return {
-                    "success": False,
-                    "error": "Failed to create user - no user ID returned"
-                }
 
-            logger.info(f"Created Turnkey user: {user_id}")
-
-            # Step 2: Create wallet for the user
             wallet_body = CreateWalletBody(
-                wallet_name=wallet_name,
-                wallet_type=WalletType.WALLET_TYPE_DEFAULT,
-                account_types=["ACCOUNT_TYPE_ETHEREUM"]
+                walletName=wallet_name,
+                accounts=[account_params]
             )
             wallet_response = client.create_wallet(wallet_body)
 
-            # Extract wallet info from response
+            # Extract wallet info
             wallet_id = None
             wallet_address = None
             if hasattr(wallet_response, 'wallet') and wallet_response.wallet:
                 wallet_id = wallet_response.wallet.wallet_id
-                # Get the address from wallet accounts
-                if hasattr(wallet_response.wallet, 'accounts') and wallet_response.wallet.accounts:
-                    # Get first account address
-                    first_account_id = wallet_response.wallet.accounts[0]
-                    # Fetch the account details to get address
-                    account_body = GetWalletAccountBody(walletAccountId=first_account_id)
-                    account_response = client.get_wallet_account(account_body)
-                    if hasattr(account_response, 'wallet_account') and account_response.wallet_account:
-                        wallet_address = account_response.wallet_account.address
+                # Get addresses from wallet accounts
+                if hasattr(wallet_response.wallet, 'addresses') and wallet_response.wallet.addresses:
+                    wallet_address = wallet_response.wallet.addresses[0]
 
             if not wallet_id:
                 return {
@@ -154,14 +135,13 @@ class TurnkeyService:
 
             return {
                 "success": True,
-                "user_id": user_id,
                 "wallet_id": wallet_id,
                 "wallet_address": wallet_address,
-                "email": user_email
+                "wallet_name": wallet_name
             }
 
         except Exception as e:
-            logger.error(f"Error creating Turnkey user/wallet: {e}")
+            logger.error(f"Error creating Turnkey wallet: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -224,7 +204,6 @@ class TurnkeyService:
             }
 
         try:
-            from turnkey_sdk_types import GetWalletBody
             wallet_body = GetWalletBody(walletId=wallet_id)
             response = client.get_wallet(wallet_body)
 
@@ -234,7 +213,7 @@ class TurnkeyService:
                     "success": True,
                     "wallet_id": wallet.wallet_id,
                     "wallet_name": wallet.wallet_name if hasattr(wallet, 'wallet_name') else None,
-                    "accounts": wallet.accounts if hasattr(wallet, 'accounts') else []
+                    "accounts": wallet.addresses if hasattr(wallet, 'addresses') else []
                 }
 
             return {
@@ -249,16 +228,15 @@ class TurnkeyService:
                 "error": str(e)
             }
 
-    def export_wallet(self, wallet_id: str, private_key_ids: list = None) -> dict:
+    def export_wallet(self, wallet_id: str) -> dict:
         """
-        Export wallet credentials (Turnkey bundle format).
+        Export wallet private key (Turnkey bundle format).
 
-        Note: Turnkey uses MPC, so this exports an encrypted bundle, not raw private keys.
-        The bundle can only be imported back into Turnkey.
+        NOTE: Turnkey uses MPC - this exports an encrypted bundle that can ONLY
+        be imported back into Turnkey. This is NOT a raw private key.
 
         Args:
             wallet_id: The wallet ID to export
-            private_key_ids: Optional list of private key IDs to export (exports all if None)
 
         Returns:
             dict with export bundle
@@ -271,27 +249,29 @@ class TurnkeyService:
             }
 
         try:
-            export_body = ExportWalletBody(
-                wallet_id=wallet_id,
-                export_format=PrivateKeyExportFormat.PRIVATE_KEY_EXPORT_FORMAT_PEM,
-                private_key_ids=private_key_ids
-            )
+            # First get wallet to find private key IDs
+            wallet_info = self.get_wallet(wallet_id)
+            if not wallet_info.get("success"):
+                return wallet_info
+
+            # Export the wallet
+            export_body = ExportWalletBody(walletId=wallet_id)
             response = client.export_wallet(export_body)
 
-            # Extract export bundle from response
+            # Extract export info
             export_bundle = None
-            if hasattr(response, 'exported_private_key_bundle'):
-                bundle = response.exported_private_key_bundle
-                if hasattr(bundle, 'encrypted_private_key'):
-                    export_bundle = {
-                        "encrypted_private_key": bundle.encrypted_private_key,
-                        "public_key": bundle.public_key if hasattr(bundle, 'public_key') else None
-                    }
+            if hasattr(response, 'exportedPrivateKeyBundle'):
+                bundle = response.exportedPrivateKeyBundle
+                export_bundle = {
+                    "encrypted_private_key": bundle.encryptedPrivateKey if hasattr(bundle, 'encryptedPrivateKey') else None,
+                    "public_key": bundle.publicKey if hasattr(bundle, 'publicKey') else None
+                }
 
             return {
                 "success": True,
                 "export_bundle": export_bundle,
-                "wallet_id": wallet_id
+                "wallet_id": wallet_id,
+                "note": "This bundle can only be imported into Turnkey"
             }
 
         except Exception as e:
