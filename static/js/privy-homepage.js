@@ -67,8 +67,26 @@ function PrivyActions() {
     }, []);
 
     const { login } = useLogin({
+        onSuccess: (user) => {
+            console.log("[GoodMarket] Privy login success:", user);
+        },
         onError: (error) => {
-            const message = error && error.message ? error.message : "Privy social login failed";
+            console.error("[GoodMarket] Privy login error:", error);
+            // Provide more helpful error messages based on error type
+            let message = "Privy social login failed";
+            if (error) {
+                if (error.code === "AUTHENTICATION_ERROR") {
+                    message = "Authentication failed. Please check your credentials.";
+                } else if (error.code === "NETWORK_ERROR") {
+                    message = "Network error. Please check your connection.";
+                } else if (error.code === "USER_ALREADY_EXISTS") {
+                    message = "This account already exists.";
+                } else if (error.code === "INVALID_CODE") {
+                    message = "Invalid verification code.";
+                } else if (error.message) {
+                    message = error.message;
+                }
+            }
             setPendingLogin(false);
             setBusy(false);
             setStatus({ kind: "error", text: message });
@@ -88,8 +106,11 @@ function PrivyActions() {
             if (typeof window.closeWalletModal === "function") {
                 window.closeWalletModal();
             }
+            console.log("[GoodMarket] Starting Privy login flow...");
             await login();
+            console.log("[GoodMarket] Privy login() completed successfully");
         } catch (err) {
+            console.error("[GoodMarket] Privy login promise rejected:", err);
             const message = err && err.message ? err.message : "Privy social login failed";
             setStatus({ kind: "error", text: message });
             setPendingLogin(false);
