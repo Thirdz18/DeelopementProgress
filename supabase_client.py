@@ -2,10 +2,18 @@ import os
 import logging
 import time
 from typing import Optional
-from supabase import create_client, Client
 from datetime import datetime
 import json
 from functools import wraps
+
+# Try to import Supabase - will be None if not installed
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    Client = None
+    create_client = None
 
 # Configure logging — do NOT call basicConfig here; root logger level is set by main.py
 logger = logging.getLogger(__name__)
@@ -52,6 +60,10 @@ def retry_on_connection_error(max_retries=3, delay=1):
 def get_supabase_client():
     """Get Supabase client instance with retry logic for initialization"""
     global supabase, supabase_enabled
+
+    if not SUPABASE_AVAILABLE:
+        logger.warning("⚠️ Supabase package not installed - please run: pip install supabase")
+        return None
 
     if not SUPABASE_URL or not SUPABASE_KEY or SUPABASE_URL == "your-supabase-url":
         logger.warning("SUPABASE is not configured.")
@@ -107,6 +119,11 @@ def get_supabase_admin_client():
 
     if _supabase_admin_initialised:
         return _supabase_admin
+
+    if not SUPABASE_AVAILABLE:
+        logger.warning("⚠️ Supabase package not installed - cannot create admin client")
+        _supabase_admin_initialised = True
+        return None
 
     service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not SUPABASE_URL or not service_role_key:
