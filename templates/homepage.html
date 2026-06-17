@@ -25,22 +25,41 @@
             box-sizing: border-box;
         }
 
-        /* ── Compact 70% scale (desktop/mobile/dApp browser) ──
-           Matches wallet.html and overview.html so the whole landing
-           page — including the Get Started / WalletConnect modal —
-           renders at 70% scale. Using `html` (not `body`) ensures
-           position:fixed descendants like the modal also inherit the
-           zoom in every supporting browser. */
-        html {
-            zoom: 0.7;
-        }
-        @supports not (zoom: 1) {
-            /* Firefox <126 fallback */
+        /* Desktop/Laptop: subtle compact feel with reasonable padding */
+        @media (min-width: 769px) {
             body {
-                transform: scale(0.7);
-                transform-origin: top center;
-                width: 142.857%;
-                margin-left: -21.4285%;
+                padding: 0 1rem;
+            }
+        }
+
+        /* Tablet */
+        @media (max-width: 1024px) {
+            .hero-grid {
+                gap: 1.5rem;
+            }
+            .hero-section {
+                padding: 2rem 1.5rem 3rem;
+            }
+        }
+
+        /* Mobile */
+        @media (max-width: 768px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+            .hero-content {
+                text-align: center;
+            }
+            .hero-section {
+                padding: 1.5rem 1rem 2rem;
+            }
+            .hero-eyebrow {
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .hero-buttons {
+                justify-content: center;
             }
         }
 
@@ -2104,6 +2123,26 @@
                     </div>
                     <span class="option-arrow">→</span>
                 </button>
+
+                <!-- Turnkey: Login with Email -->
+                <button class="wallet-option-card" onclick="showTurnkeyLoginOptions()" style="border-color: rgba(16, 185, 129, 0.5);">
+                    <div class="option-icon">📧</div>
+                    <div class="option-text">
+                        <div class="option-title">Login with Email</div>
+                        <p class="option-desc">For existing Turnkey wallet users</p>
+                    </div>
+                    <span class="option-arrow">→</span>
+                </button>
+
+                <!-- Turnkey: Create New Wallet -->
+                <button class="wallet-option-card" onclick="showTurnkeyCreateWallet()" style="border-color: rgba(139, 92, 246, 0.5);">
+                    <div class="option-icon">🔐</div>
+                    <div class="option-text">
+                        <div class="option-title">Create New Wallet</div>
+                        <p class="option-desc">Generate a secure wallet with Turnkey</p>
+                    </div>
+                    <span class="option-arrow">→</span>
+                </button>
             </div>
 
             <!-- Step 2A: WalletConnect / injected -->
@@ -2245,6 +2284,187 @@
             const qrWrap = document.getElementById('wcQrWrap');
             if (qrWrap) qrWrap.style.display = 'none';
             detectInjectedWallet();
+        }
+
+        // =============================================
+        // Turnkey Wallet Functions
+        // =============================================
+
+        // Turnkey: Login with Email
+        function showTurnkeyLoginOptions() {
+            document.getElementById('walletOptions').style.display = 'none';
+            let formDiv = document.getElementById('turnkeyLoginForm');
+            if (!formDiv) {
+                formDiv = document.createElement('div');
+                formDiv.id = 'turnkeyLoginForm';
+                formDiv.className = 'wallet-form';
+                formDiv.innerHTML = `
+                    <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
+                    <div style="text-align:center;margin-bottom:1.5rem;">
+                        <div style="font-size:2.5rem;margin-bottom:0.5rem;">📧</div>
+                        <h3 style="color:#fff;margin-bottom:0.5rem;">Login with Email</h3>
+                        <p style="color:#9ca3af;font-size:0.85rem;">Sign in with your Turnkey wallet credentials</p>
+                    </div>
+                    <div class="wallet-input-group">
+                        <label class="wallet-label" for="turnkeyLoginEmail">Email Address</label>
+                        <input type="email" id="turnkeyLoginEmail" class="wallet-input" placeholder="your@email.com" autocomplete="email" />
+                    </div>
+                    <div class="wallet-input-group" style="margin-top:1rem;">
+                        <label class="wallet-label" for="turnkeyLoginPassword">Password</label>
+                        <input type="password" id="turnkeyLoginPassword" class="wallet-input" placeholder="Enter your password" autocomplete="current-password" />
+                    </div>
+                    <div id="turnkeyLoginStatus" class="status-message" style="margin-top:1rem;"></div>
+                    <button class="btn-primary" style="width:100%;margin-top:1rem;" onclick="handleTurnkeyLogin()">
+                        Login
+                    </button>
+                    <p style="text-align:center;margin-top:1rem;color:#6b7280;font-size:0.75rem;">
+                        New here? <a href="#" onclick="showTurnkeyCreateWallet();return false;" style="color:#a78bfa;">Create a new wallet</a>
+                    </p>
+                `;
+                document.querySelector('#walletModal .wallet-modal-content').appendChild(formDiv);
+            }
+            formDiv.classList.add('visible');
+        }
+
+        // Turnkey: Create New Wallet
+        function showTurnkeyCreateWallet() {
+            document.getElementById('walletOptions').style.display = 'none';
+            let formDiv = document.getElementById('turnkeyCreateForm');
+            if (!formDiv) {
+                formDiv = document.createElement('div');
+                formDiv.id = 'turnkeyCreateForm';
+                formDiv.className = 'wallet-form';
+                formDiv.innerHTML = `
+                    <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
+                    <div style="text-align:center;margin-bottom:1.5rem;">
+                        <div style="font-size:2.5rem;margin-bottom:0.5rem;">🔐</div>
+                        <h3 style="color:#fff;margin-bottom:0.5rem;">Create New Wallet</h3>
+                        <p style="color:#9ca3af;font-size:0.85rem;">Generate a secure MPC-powered wallet</p>
+                    </div>
+                    <div class="wallet-input-group">
+                        <label class="wallet-label" for="turnkeyCreateEmail">Email Address</label>
+                        <input type="email" id="turnkeyCreateEmail" class="wallet-input" placeholder="your@email.com" autocomplete="email" />
+                    </div>
+                    <div class="wallet-input-group" style="margin-top:1rem;">
+                        <label class="wallet-label" for="turnkeyCreateName">Display Name (Optional)</label>
+                        <input type="text" id="turnkeyCreateName" class="wallet-input" placeholder="Your name" autocomplete="name" />
+                    </div>
+                    <div class="wallet-input-group" style="margin-top:1rem;">
+                        <label class="wallet-label" for="turnkeyCreatePassword">Password</label>
+                        <input type="password" id="turnkeyCreatePassword" class="wallet-input" placeholder="Create a password" autocomplete="new-password" />
+                    </div>
+                    <div class="wallet-input-group" style="margin-top:1rem;">
+                        <label class="wallet-label" for="turnkeyCreateConfirm">Confirm Password</label>
+                        <input type="password" id="turnkeyCreateConfirm" class="wallet-input" placeholder="Confirm your password" autocomplete="new-password" />
+                    </div>
+                    <div id="turnkeyCreateStatus" class="status-message" style="margin-top:1rem;"></div>
+                    <button class="btn-primary" style="width:100%;margin-top:1rem;" onclick="handleTurnkeyCreate()">
+                        Create Wallet
+                    </button>
+                    <p style="text-align:center;margin-top:1rem;color:#6b7280;font-size:0.75rem;">
+                        Already have a wallet? <a href="#" onclick="showTurnkeyLoginOptions();return false;" style="color:#a78bfa;">Login here</a>
+                    </p>
+                `;
+                document.querySelector('#walletModal .wallet-modal-content').appendChild(formDiv);
+            }
+            formDiv.classList.add('visible');
+        }
+
+        // Handle Turnkey Login
+        async function handleTurnkeyLogin() {
+            const email = document.getElementById('turnkeyLoginEmail').value.trim().toLowerCase();
+            const password = document.getElementById('turnkeyLoginPassword').value;
+            const statusEl = document.getElementById('turnkeyLoginStatus');
+
+            if (!email || !password) {
+                showWalletStatus('turnkeyLoginStatus', 'Please fill in all fields', 'error');
+                return;
+            }
+
+            showWalletStatus('turnkeyLoginStatus', '⏳ Checking your wallet...', 'info');
+
+            try {
+                // For now, we'll use a simple login flow
+                // In production, this would authenticate against Turnkey's user management
+                const response = await fetch('/api/turnkey/status');
+                const status = await response.json();
+
+                if (!status.configured) {
+                    showWalletStatus('turnkeyLoginStatus', 'Turnkey is not configured on this server', 'error');
+                    return;
+                }
+
+                // TODO: Implement proper Turnkey authentication
+                // For MVP, we'll show an info message
+                showWalletStatus('turnkeyLoginStatus', '📧 Email login requires server-side authentication. Please use WalletConnect or create a new wallet for now.', 'info');
+
+            } catch (err) {
+                showWalletStatus('turnkeyLoginStatus', '❌ Login failed: ' + (err.message || 'Unknown error'), 'error');
+            }
+        }
+
+        // Handle Turnkey Wallet Creation
+        async function handleTurnkeyCreate() {
+            const email = document.getElementById('turnkeyCreateEmail').value.trim().toLowerCase();
+            const name = document.getElementById('turnkeyCreateName').value.trim();
+            const password = document.getElementById('turnkeyCreatePassword').value;
+            const confirm = document.getElementById('turnkeyCreateConfirm').value;
+            const statusEl = document.getElementById('turnkeyCreateStatus');
+
+            if (!email || !password) {
+                showWalletStatus('turnkeyCreateStatus', 'Please fill in email and password', 'error');
+                return;
+            }
+
+            if (password !== confirm) {
+                showWalletStatus('turnkeyCreateStatus', '❌ Passwords do not match', 'error');
+                return;
+            }
+
+            if (password.length < 8) {
+                showWalletStatus('turnkeyCreateStatus', '❌ Password must be at least 8 characters', 'error');
+                return;
+            }
+
+            // Basic email validation
+            if (!email.includes('@') || !email.includes('.')) {
+                showWalletStatus('turnkeyCreateStatus', '❌ Please enter a valid email address', 'error');
+                return;
+            }
+
+            showWalletStatus('turnkeyCreateStatus', '⏳ Creating your wallet... this may take a moment.', 'info');
+
+            try {
+                const response = await fetch('/api/turnkey/create-wallet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: email,
+                        user_name: name || 'GoodMarket User',
+                        wallet_name: 'GoodMarket Wallet'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showWalletStatus('turnkeyCreateStatus', '✅ Wallet created! Redirecting...', 'success');
+
+                    // Store wallet info in session
+                    sessionStorage.setItem('turnkey_wallet_id', data.wallet_id);
+                    sessionStorage.setItem('turnkey_user_id', data.user_id);
+
+                    // Auto-login and redirect
+                    setTimeout(() => {
+                        window.location.href = '/wallet';
+                    }, 1000);
+                } else {
+                    showWalletStatus('turnkeyCreateStatus', '❌ ' + (data.error || 'Failed to create wallet'), 'error');
+                }
+
+            } catch (err) {
+                showWalletStatus('turnkeyCreateStatus', '❌ Error: ' + (err.message || 'Unknown error'), 'error');
+            }
         }
 
 
