@@ -2,18 +2,10 @@ import os
 import logging
 import time
 from typing import Optional
+from supabase import create_client, Client
 from datetime import datetime
 import json
 from functools import wraps
-
-# Try to import Supabase - will be None if not installed
-try:
-    from supabase import create_client, Client
-    SUPABASE_AVAILABLE = True
-except ImportError:
-    SUPABASE_AVAILABLE = False
-    Client = None
-    create_client = None
 
 # Configure logging — do NOT call basicConfig here; root logger level is set by main.py
 logger = logging.getLogger(__name__)
@@ -60,10 +52,6 @@ def retry_on_connection_error(max_retries=3, delay=1):
 def get_supabase_client():
     """Get Supabase client instance with retry logic for initialization"""
     global supabase, supabase_enabled
-
-    if not SUPABASE_AVAILABLE:
-        logger.warning("⚠️ Supabase package not installed - please run: pip install supabase")
-        return None
 
     if not SUPABASE_URL or not SUPABASE_KEY or SUPABASE_URL == "your-supabase-url":
         logger.warning("SUPABASE is not configured.")
@@ -119,11 +107,6 @@ def get_supabase_admin_client():
 
     if _supabase_admin_initialised:
         return _supabase_admin
-
-    if not SUPABASE_AVAILABLE:
-        logger.warning("⚠️ Supabase package not installed - cannot create admin client")
-        _supabase_admin_initialised = True
-        return None
 
     service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not SUPABASE_URL or not service_role_key:
@@ -249,12 +232,6 @@ CREATE TABLE IF NOT EXISTS email_wallet_links (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_email_wallet_links_wallet ON email_wallet_links(wallet_address);
-
--- 0e. TURNKEY + SUPABASE AUTH EMAIL VERIFICATION
--- Run these to add supabase_user_id to email_wallet_links for Supabase Auth OTP support:
-ALTER TABLE email_wallet_links ADD COLUMN IF NOT EXISTS supabase_user_id UUID;
-CREATE INDEX IF NOT EXISTS idx_email_wallet_links_supabase_user ON email_wallet_links(supabase_user_id);
-CREATE INDEX IF NOT EXISTS idx_email_wallet_links_email_hash ON email_wallet_links(email_hash);
 
 -- 1.1 Create news_articles table for news feed system
 CREATE TABLE IF NOT EXISTS news_articles (
@@ -1723,267 +1700,3 @@ def get_wallet_streams(wallet_address: str) -> list:
     except Exception as e:
         logger.error(f"Failed to get wallet streams: {e}")
         return []
-
-
-# ============================================
-# SUPABASE AUTH EMAIL VERIFICATION (OTP)
-# ============================================
-import hashlib
-
-def hash_email(email: str) -> str:
-    """Hash an email for privacy-preserving storage"""
-    return hashlib.sha256(email.lower().strip().encode()).hexdigest()
-
-
-def get_supabase_auth_client():
-    """
-    Get a Supabase client with Admin privileges for Auth operations.
-    Uses the service_role key for admin access to auth.users.
-    """
-    admin_client = get_supabase_admin_client()
-    if not admin_client:
-        logger.error("❌ Cannot get Supabase Auth client - admin client not available")
-        return None
-    return admin_client
-
-
-def send_otp_email(email: str) -> dict:
-    """
-    Send OTP (One-Time Password) to user's email using Supabase Auth.
-    
-    Note: Supabase Admin API doesn't directly support OTP. The recommended approach
-    is to use the client-side SDK's signInWithOtp() method. This function returns
-    success to indicate the frontend should initiate the OTP flow.
-    
-    Args:
-        email: User's email address
-    
-    Returns:
-        {"success": bool, "message": str, "supabase_user_id": str or None}
-    """
-    # Check if Supabase is available
-    if not SUPABASE_AVAILABLE:
-        return {"success": False, "error": "Supabase package not installed"}
-    
-    admin_client = get_supabase_auth_client()
-    if not admin_client:
-        return {"success": False, "error": "Supabase admin client not available"}
-    
-    try:
-        # Try using generate_link with signup type (this will send confirmation email with OTP)
-        # This creates a user if not exists
-        response = admin_client.auth.admin.generate_link({
-            "type": "signup",
-            "email": email,
-            "options": {
-                "email_redirect_to": None  # No redirect needed for OTP
-            }
-        })
-        
-        logger.info(f"✅ Signup link/OTP sent to {email}")
-        return {
-            "success": True,
-            "message": "Verification code sent to your email",
-            "supabase_user_id": response.user.id if hasattr(response, 'user') and response.user else None
-        }
-        
-    except Exception as e:
-        error_msg = str(e).lower()
-        
-        # Handle "user already exists" case
-        if "already" in error_msg and "exist" in error_msg:
-            try:
-                # User exists - try to resend invite/signup link
-                # This will trigger OTP for the existing user
-                admin_client.auth.admin.generate_link({
-                    "type": "signup",
-                    "email": email,
-                })
-                logger.info(f"User exists, OTP link resent to {email}")
-                return {
-                    "success": True,
-                    "message": "Verification code sent to your email",
-                    "supabase_user_id": None
-                }
-            except Exception as inner_e:
-                logger.error(f"Failed to resend OTP for existing user: {inner_e}")
-                return {"success": False, "error": str(inner_e)}
-        
-        logger.error(f"Failed to send OTP email: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def verify_otp_and_link_wallet(email: str, otp_code: str, wallet_address: str, 
-                                turnkey_user_id: str = None, turnkey_sign_with: str = None,
-                                custodial_key_enc: str = None) -> dict:
-    """
-    Verify OTP and link wallet to the Supabase Auth user.
-    
-    This is a 2-step process:
-    1. Verify the OTP token (Supabase validates it)
-    2. Link the wallet address to the user's record
-    
-    Args:
-        email: User's email address
-        otp_code: The 6-digit OTP code
-        wallet_address: User's wallet address
-        turnkey_user_id: Turnkey user ID (optional)
-        turnkey_sign_with: Turnkey sign with info (optional)
-        custodial_key_enc: Encrypted custodial key (optional)
-    
-    Returns:
-        {"success": bool, "user_id": str, "wallet_address": str, "error": str}
-    """
-    admin_client = get_supabase_admin_client()
-    if not admin_client:
-        return {"success": False, "error": "Supabase admin client not available"}
-    
-    try:
-        # Step 1: Verify the OTP using admin verify_otp
-        # Note: Supabase Admin SDK has verify_token for OTP verification
-        # For OTP verification, we use the standard auth flow
-        
-        # First, let's get or create the user
-        email_hash = hash_email(email)
-        
-        # Check if user already exists in our email_wallet_links
-        existing = admin_client.table("email_wallet_links").select("*").eq(
-            "email_hash", email_hash
-        ).execute()
-        
-        supabase_user_id = None
-        is_new_user = False
-        
-        if existing.data and len(existing.data) > 0:
-            # User exists - get their supabase_user_id
-            supabase_user_id = existing.data[0].get("supabase_user_id")
-            logger.info(f"Found existing user: {supabase_user_id}")
-        
-        # Step 2: Update or create the email_wallet_links record
-        now = datetime.utcnow().isoformat()
-        
-        link_data = {
-            "email_hash": email_hash,
-            "wallet_address": wallet_address.lower(),
-            "login_method": "turnkey_email",
-            "updated_at": now,
-        }
-        
-        if supabase_user_id:
-            link_data["supabase_user_id"] = supabase_user_id
-        if turnkey_user_id:
-            link_data["turnkey_user_id"] = turnkey_user_id
-        if turnkey_sign_with:
-            link_data["turnkey_sign_with"] = turnkey_sign_with
-        if custodial_key_enc:
-            link_data["custodial_key_enc"] = custodial_key_enc
-        
-        if existing.data and len(existing.data) > 0:
-            # Update existing record
-            record_id = existing.data[0].get("id")
-            admin_client.table("email_wallet_links").update(link_data).eq(
-                "id", record_id
-            ).execute()
-            logger.info(f"Updated email_wallet_links for {email_hash[:16]}...")
-        else:
-            # Insert new record
-            link_data["created_at"] = now
-            admin_client.table("email_wallet_links").insert(link_data).execute()
-            logger.info(f"Created email_wallet_links for {email_hash[:16]}...")
-            is_new_user = True
-        
-        return {
-            "success": True,
-            "supabase_user_id": supabase_user_id,
-            "wallet_address": wallet_address.lower(),
-            "is_new_user": is_new_user,
-            "email_hash": email_hash
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to verify OTP and link wallet: {e}")
-        return {"success": False, "error": str(e)}
-
-
-def get_user_by_email_hash(email_hash: str) -> dict:
-    """
-    Get user data by email hash.
-    
-    Args:
-        email_hash: SHA256 hash of the user's email
-    
-    Returns:
-        User data dict or empty dict if not found
-    """
-    try:
-        client = get_supabase_client()
-        if not client:
-            return {}
-        
-        result = client.table("email_wallet_links").select("*").eq(
-            "email_hash", email_hash
-        ).execute()
-        
-        if result.data and len(result.data) > 0:
-            return result.data[0]
-        return {}
-        
-    except Exception as e:
-        logger.error(f"Failed to get user by email hash: {e}")
-        return {}
-
-
-def get_user_by_wallet(wallet_address: str) -> dict:
-    """
-    Get user data by wallet address.
-    
-    Args:
-        wallet_address: User's wallet address
-    
-    Returns:
-        User data dict or empty dict if not found
-    """
-    try:
-        client = get_supabase_client()
-        if not client:
-            return {}
-        
-        result = client.table("email_wallet_links").select("*").eq(
-            "wallet_address", wallet_address.lower()
-        ).execute()
-        
-        if result.data and len(result.data) > 0:
-            return result.data[0]
-        return {}
-        
-    except Exception as e:
-        logger.error(f"Failed to get user by wallet: {e}")
-        return {}
-
-
-def get_user_by_supabase_id(supabase_user_id: str) -> dict:
-    """
-    Get user data by Supabase Auth user ID.
-    
-    Args:
-        supabase_user_id: Supabase auth.users ID
-    
-    Returns:
-        User data dict or empty dict if not found
-    """
-    try:
-        client = get_supabase_client()
-        if not client:
-            return {}
-        
-        result = client.table("email_wallet_links").select("*").eq(
-            "supabase_user_id", supabase_user_id
-        ).execute()
-        
-        if result.data and len(result.data) > 0:
-            return result.data[0]
-        return {}
-        
-    except Exception as e:
-        logger.error(f"Failed to get user by supabase ID: {e}")
-        return {}
