@@ -11244,6 +11244,13 @@ def turnkey_login_init():
         from turnkey_service import get_turnkey_service
         service = get_turnkey_service()
         
+        # Check if SDK is available
+        if not service.sdk_available:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey SDK is not installed on this server. Please contact the administrator."
+            }), 503
+        
         if not service.is_configured:
             return jsonify({
                 "success": False, 
@@ -11388,6 +11395,13 @@ def turnkey_create_init():
         
         from turnkey_service import get_turnkey_service
         service = get_turnkey_service()
+        
+        # Check if SDK is available
+        if not service.sdk_available:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey SDK is not installed on this server. Please contact the administrator."
+            }), 503
         
         if not service.is_configured:
             return jsonify({

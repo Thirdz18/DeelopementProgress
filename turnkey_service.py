@@ -16,21 +16,31 @@ import random
 import string
 import time
 from typing import Optional, List
-from turnkey_http import TurnkeyClient
-from turnkey_api_key_stamper import ApiKeyStamper, ApiKeyStamperConfig
-from turnkey_sdk_types import (
-    CreateWalletBody,
-    GetWalletAccountBody,
-    GetWalletsBody,
-    ExportWalletBody,
-    GetWalletBody,
-    CreateWalletAccountsBody,
-    v1WalletAccountParams,
-    v1Curve,
-    v1PathFormat,
-    v1AddressFormat,
-    ExportPrivateKeyBody
-)
+
+# Try to import Turnkey SDK - will be None if not installed
+try:
+    from turnkey_http import TurnkeyClient
+    from turnkey_api_key_stamper import ApiKeyStamper, ApiKeyStamperConfig
+    from turnkey_sdk_types import (
+        CreateWalletBody,
+        GetWalletAccountBody,
+        GetWalletsBody,
+        ExportWalletBody,
+        GetWalletBody,
+        CreateWalletAccountsBody,
+        v1WalletAccountParams,
+        v1Curve,
+        v1PathFormat,
+        v1AddressFormat,
+        ExportPrivateKeyBody
+    )
+    TURNKEY_SDK_AVAILABLE = True
+except ImportError:
+    TURNKEY_SDK_AVAILABLE = False
+    TurnkeyClient = None
+    ApiKeyStamper = None
+    ApiKeyStamperConfig = None
+
 from config import (
     TURNKEY_API_PUBLIC_KEY,
     TURNKEY_API_PRIVATE_KEY,
@@ -52,6 +62,7 @@ class TurnkeyService:
         """Initialize Turnkey client with API credentials."""
         self._client = None
         self._configured = bool(
+            TURNKEY_SDK_AVAILABLE and
             TURNKEY_API_PUBLIC_KEY and
             TURNKEY_API_PRIVATE_KEY and
             TURNKEY_ORGANIZATION_ID
@@ -61,6 +72,11 @@ class TurnkeyService:
     def is_configured(self) -> bool:
         """Check if Turnkey is properly configured."""
         return self._configured
+
+    @property
+    def sdk_available(self) -> bool:
+        """Check if Turnkey SDK is installed."""
+        return TURNKEY_SDK_AVAILABLE
 
     def _get_client(self) -> Optional[TurnkeyClient]:
         """Get or create Turnkey client instance."""
