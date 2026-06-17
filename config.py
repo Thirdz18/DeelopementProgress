@@ -9,6 +9,18 @@ import os
 PRODUCTION_DOMAIN = os.getenv('PRODUCTION_DOMAIN', 'https://goodmarket.live')
 
 # ============================
+# Turnkey Configuration
+# ============================
+# Turnkey API credentials for embedded wallet creation
+# Get these from: https://app.turnkey.com
+TURNKEY_API_PUBLIC_KEY = os.getenv('TURNKEY_API_PUBLIC_KEY', '')
+TURNKEY_API_PRIVATE_KEY = os.getenv('TURNKEY_API_PRIVATE_KEY', '')
+TURNKEY_ORGANIZATION_ID = os.getenv('TURNKEY_ORGANIZATION_ID', '')
+
+# Turnkey API base URL
+TURNKEY_API_BASE_URL = os.getenv('TURNKEY_API_BASE_URL', 'https://api.turnkey.com')
+
+# ============================
 # Superfluid P2P Streaming Configuration
 # ============================
 # GoodDollar G$ is a Pure SuperToken on Celo (chain 42220) - no wrapping needed!

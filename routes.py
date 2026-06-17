@@ -10992,3 +10992,231 @@ def fuse_faucet_gas():
     except Exception as e:
         logger.error(f"fuse_faucet_gas error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================
+# Turnkey Wallet Routes
+# ============================
+
+@routes.route("/api/turnkey/create-wallet", methods=["POST"])
+def turnkey_create_wallet():
+    """
+    Create a new embedded wallet for a user via Turnkey.
+    
+    Body:
+        email: User's email address (required)
+        user_name: Display name (optional, defaults to "GoodMarket User")
+        wallet_name: Wallet name (optional, defaults to "GoodMarket Wallet")
+    
+    Returns:
+        success: bool
+        user_id: Turnkey user ID
+        wallet_id: Turnkey wallet ID
+        wallet_address: Ethereum/Celo wallet address
+        error: Error message if failed
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        
+        email = data.get("email", "").strip().lower()
+        if not email:
+            return jsonify({"success": False, "error": "Email is required"}), 400
+        
+        # Basic email validation
+        if "@" not in email or "." not in email.split("@")[-1]:
+            return jsonify({"success": False, "error": "Invalid email format"}), 400
+        
+        user_name = data.get("user_name", "GoodMarket User").strip()
+        wallet_name = data.get("wallet_name", "GoodMarket Wallet").strip()
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        # Create user and wallet
+        result = service.create_user_and_wallet(
+            user_email=email,
+            user_name=user_name,
+            wallet_name=wallet_name
+        )
+        
+        if result.get("success"):
+            logger.info(f"Created Turnkey wallet for {email}: {result.get('wallet_address')}")
+            return jsonify({
+                "success": True,
+                "user_id": result.get("user_id"),
+                "wallet_id": result.get("wallet_id"),
+                "wallet_address": result.get("wallet_address"),
+                "email": email
+            })
+        else:
+            logger.error(f"Failed to create Turnkey wallet for {email}: {result.get('error')}")
+            return jsonify({
+                "success": False,
+                "error": result.get("error", "Failed to create wallet")
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"turnkey_create_wallet error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/turnkey/export-wallet", methods=["POST"])
+@auth_required
+def turnkey_export_wallet():
+    """
+    Export wallet credentials for the authenticated user.
+    
+    Requires authentication (wallet must be logged in).
+    
+    Body:
+        wallet_id: Turnkey wallet ID (optional, uses stored wallet_id if not provided)
+    
+    Returns:
+        success: bool
+        export_bundle: Encrypted wallet bundle
+        wallet_id: The exported wallet ID
+        error: Error message if failed
+    """
+    try:
+        wallet = session.get("wallet", "").strip().lower()
+        if not wallet:
+            return jsonify({"success": False, "error": "Not authenticated"}), 401
+        
+        data = request.get_json(silent=True) or {}
+        wallet_id = data.get("wallet_id")
+        
+        # If no wallet_id provided, try to get from user session storage
+        if not wallet_id:
+            # Try to get from Supabase or session
+            turnkey_wallet_id = session.get("turnkey_wallet_id")
+            if turnkey_wallet_id:
+                wallet_id = turnkey_wallet_id
+        
+        if not wallet_id:
+            return jsonify({
+                "success": False, 
+                "error": "Wallet ID not found. Please provide wallet_id."
+            }), 400
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        result = service.export_wallet(wallet_id)
+        
+        if result.get("success"):
+            logger.info(f"Exported Turnkey wallet {wallet_id} for {wallet}")
+            return jsonify({
+                "success": True,
+                "export_bundle": result.get("export_bundle"),
+                "wallet_id": wallet_id
+            })
+        else:
+            logger.error(f"Failed to export Turnkey wallet {wallet_id}: {result.get('error')}")
+            return jsonify({
+                "success": False,
+                "error": result.get("error", "Failed to export wallet")
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"turnkey_export_wallet error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/turnkey/get-wallet", methods=["GET"])
+@auth_required
+def turnkey_get_wallet():
+    """
+    Get wallet information for the authenticated user.
+    
+    Returns:
+        success: bool
+        wallet_id: Turnkey wallet ID
+        wallet_address: Wallet address
+        email: User's email
+        error: Error message if failed
+    """
+    try:
+        wallet = session.get("wallet", "").strip().lower()
+        if not wallet:
+            return jsonify({"success": False, "error": "Not authenticated"}), 401
+        
+        # Get wallet_id from session
+        turnkey_wallet_id = session.get("turnkey_wallet_id")
+        if not turnkey_wallet_id:
+            return jsonify({
+                "success": False, 
+                "error": "No Turnkey wallet found for this user"
+            }), 404
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        result = service.get_wallet(turnkey_wallet_id)
+        
+        if result.get("success"):
+            return jsonify({
+                "success": True,
+                "wallet_id": result.get("wallet_id"),
+                "wallet_name": result.get("wallet_name"),
+                "accounts": result.get("accounts", []),
+                "wallet_address": session.get("wallet")
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get("error", "Failed to get wallet")
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"turnkey_get_wallet error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/turnkey/status", methods=["GET"])
+def turnkey_status():
+    """
+    Check if Turnkey is configured and available.
+    
+    Returns:
+        configured: bool
+        message: Status message
+    """
+    try:
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if service.is_configured:
+            return jsonify({
+                "configured": True,
+                "message": "Turnkey is configured and ready"
+            })
+        else:
+            return jsonify({
+                "configured": False,
+                "message": "Turnkey is not configured"
+            })
+            
+    except Exception as e:
+        logger.error(f"turnkey_status error: {e}")
+        return jsonify({
+            "configured": False,
+            "error": str(e)
+        }), 500

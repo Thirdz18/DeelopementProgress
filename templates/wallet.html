@@ -1779,7 +1779,29 @@
                 </div>
             </div>
 
-
+            <!-- Turnkey Wallet Section (only shown for Turnkey users) -->
+            <div id="turnkeySettingsSection" style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.07);display:none;">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">🔐 Turnkey Wallet</div>
+                <div style="background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.25);border-radius:10px;padding:0.85rem 0.95rem;font-size:0.85rem;line-height:1.6;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.45rem;">
+                        <span style="color:var(--text-dim);">Wallet Type</span>
+                        <span style="color:#a78bfa;font-weight:600;">Turnkey MPC</span>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;margin-bottom:0.35rem;">
+                        <span style="color:var(--text-dim);">Security</span>
+                        <span style="color:#6ee7b7;font-weight:600;">Hardware-Backed</span>
+                    </div>
+                    <div style="margin-top:0.75rem;">
+                        <p style="font-size:0.72rem;color:rgba(232,234,246,0.5);line-height:1.5;margin-bottom:0.75rem;">
+                            ⚠️ Turnkey uses MPC (Multi-Party Computation) technology. Your private keys are secured across distributed servers.
+                        </p>
+                        <button type="button" id="turnkeyExportBtn" onclick="handleTurnkeyExport()" style="width:100%;padding:0.6rem 0.8rem;border-radius:10px;border:1px solid rgba(139,92,246,0.45);background:linear-gradient(135deg,rgba(139,92,246,0.2),rgba(124,58,237,0.15));color:#a78bfa;font-weight:600;cursor:pointer;font-size:0.85rem;">
+                            📤 Export Wallet Bundle
+                        </button>
+                        <div id="turnkeyExportStatus" style="margin-top:0.5rem;font-size:0.75rem;display:none;"></div>
+                    </div>
+                </div>
+            </div>
 
             <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.07);">
                 <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Login Method</div>
@@ -5674,6 +5696,93 @@
             } catch (_) { /* no-op */ }
         })();
     });
+
+    // ============================
+    // Turnkey Wallet Functions
+    // ============================
+
+    // Check if user has Turnkey wallet and show/hide section
+    (function checkTurnkeyWallet() {
+        const turnkeyWalletId = sessionStorage.getItem('turnkey_wallet_id');
+        if (turnkeyWalletId) {
+            const section = document.getElementById('turnkeySettingsSection');
+            if (section) {
+                section.style.display = 'block';
+            }
+        }
+    })();
+
+    // Handle Turnkey Wallet Export
+    async function handleTurnkeyExport() {
+        const statusEl = document.getElementById('turnkeyExportStatus');
+        const btn = document.getElementById('turnkeyExportBtn');
+
+        if (!statusEl || !btn) return;
+
+        // Show loading state
+        btn.disabled = true;
+        btn.textContent = '⏳ Exporting...';
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#9ca3af';
+        statusEl.textContent = 'Preparing export bundle...';
+
+        try {
+            // Get wallet ID from session storage
+            const walletId = sessionStorage.getItem('turnkey_wallet_id');
+
+            if (!walletId) {
+                statusEl.style.color = '#ff7070';
+                statusEl.textContent = '❌ No Turnkey wallet found. Please create one first.';
+                btn.disabled = false;
+                btn.textContent = '📤 Export Wallet Bundle';
+                return;
+            }
+
+            const response = await fetch('/api/turnkey/export-wallet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ wallet_id: walletId })
+            });
+
+            const data = await response.json();
+
+            if (data.success && data.export_bundle) {
+                statusEl.style.color = '#6ee7b7';
+                statusEl.textContent = '✅ Export bundle ready!';
+
+                // Create downloadable file
+                const exportData = {
+                    wallet_id: data.wallet_id,
+                    encrypted_private_key: data.export_bundle.encrypted_private_key,
+                    public_key: data.export_bundle.public_key,
+                    exported_at: new Date().toISOString(),
+                    note: 'This bundle can only be imported back into Turnkey. Keep it secure!'
+                };
+
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `turnkey-wallet-backup-${data.wallet_id.slice(0, 8)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                statusEl.textContent = '✅ Download started! Save your backup file securely.';
+            } else {
+                statusEl.style.color = '#ff7070';
+                statusEl.textContent = '❌ Export failed: ' + (data.error || 'Unknown error');
+            }
+
+        } catch (err) {
+            statusEl.style.color = '#ff7070';
+            statusEl.textContent = '❌ Error: ' + (err.message || 'Unknown error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '📤 Export Wallet Bundle';
+        }
+    }
     </script>
 
     <script>
