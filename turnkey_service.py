@@ -5,17 +5,19 @@ This service provides embedded wallet functionality using Turnkey's MPC infrastr
 combined with email verification for user authentication.
 
 Flow:
-1. User enters email → Send verification code
-2. User enters code → Verify and create wallet/login
+1. User enters email → Send OTP via Turnkey
+2. User enters OTP → Verify and create wallet/login
 3. Wallet created → User logged in
 
 Reference: https://docs.turnkey.com
 """
 import logging
-import random
-import string
-import time
+import base64
+import os
 from typing import Optional, List
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.backends import default_backend
 
 # Try to import Turnkey SDK - will be None if not installed
 try:
@@ -32,7 +34,11 @@ try:
         v1Curve,
         v1PathFormat,
         v1AddressFormat,
-        ExportPrivateKeyBody
+        ExportPrivateKeyBody,
+        InitOtpBody,
+        VerifyOtpBody,
+        OtpLoginBody,
+        InitOtpResponse
     )
     TURNKEY_SDK_AVAILABLE = True
 except ImportError:
@@ -40,6 +46,9 @@ except ImportError:
     TurnkeyClient = None
     ApiKeyStamper = None
     ApiKeyStamperConfig = None
+    InitOtpBody = None
+    VerifyOtpBody = None
+    OtpLoginBody = None
 
 from config import (
     TURNKEY_API_PUBLIC_KEY,
@@ -50,8 +59,8 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# In-memory storage for verification codes (use Redis in production)
-_verification_codes: dict = {}
+# In-memory storage for OTP sessions (use Redis in production)
+_otp_sessions: dict = {}
 _CODE_EXPIRY_SECONDS = 300  # 5 minutes
 
 
@@ -304,68 +313,127 @@ class TurnkeyService:
                 "error": str(e)
             }
 
-    def generate_verification_code(self, email: str, purpose: str = "login") -> Optional[str]:
+    def generate_verification_code(self, email: str, purpose: str = "login") -> Optional[dict]:
         """
-        Generate a 6-digit verification code for email verification.
-        
+        Generate and send a verification code via Turnkey OTP.
+
         Args:
             email: User's email address
             purpose: Purpose of the code (login, create)
-            
-        Returns:
-            The generated 6-digit code
-        """
-        # Generate 6-digit code
-        code = ''.join(random.choices(string.digits, k=6))
-        
-        # Store with timestamp
-        _verification_codes[email] = {
-            "code": code,
-            "purpose": purpose,
-            "timestamp": time.time()
-        }
-        
-        logger.info(f"Generated verification code for {email} (purpose: {purpose})")
-        return code
 
-    def verify_code(self, email: str, code: str, purpose: str = "login") -> bool:
+        Returns:
+            Dict with otpId for verifying the code later, or None if failed
         """
-        Verify a verification code.
-        
+        if not self.sdk_available:
+            logger.error("Turnkey SDK not available")
+            return None
+
+        try:
+            # Generate OTP via Turnkey
+            init_otp_input = InitOtpBody(
+                organizationId=self.organization_id,
+                otpType="OTP_TYPE_EMAIL",  # Send via email
+                contact=email,
+                appName="GoodMarket",
+                otpLength=6,
+                expirationSeconds=str(_CODE_EXPIRY_SECONDS)
+            )
+
+            response = self.client.init_otp(init_otp_input)
+
+            if response.activity:
+                otp_id = response.activity.id
+                logger.info(f"OTP sent to {email} via Turnkey (otpId: {otp_id})")
+
+                # Store session for verification
+                _otp_sessions[otp_id] = {
+                    "email": email,
+                    "purpose": purpose
+                }
+
+                return {"otp_id": otp_id, "email": email}
+
+            logger.error(f"Failed to send OTP: {response}")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error sending OTP: {e}")
+            return None
+
+    def verify_code(self, email: str, code: str, otp_id: str, purpose: str = "login") -> dict:
+        """
+        Verify an OTP code using Turnkey's OTP auth.
+
         Args:
             email: User's email address
-            code: The code to verify
+            code: The 6-digit OTP code
+            otp_id: The OTP ID from init_otp response
             purpose: Expected purpose of the code
-            
+
         Returns:
-            True if code is valid and not expired
+            Dict with success status and any credentials
         """
-        if email not in _verification_codes:
-            logger.warning(f"No verification code found for {email}")
-            return False
-        
-        stored = _verification_codes[email]
-        
-        # Check if expired (5 minutes)
-        if time.time() - stored["timestamp"] > _CODE_EXPIRY_SECONDS:
-            logger.warning(f"Verification code expired for {email}")
-            del _verification_codes[email]
-            return False
-        
-        # Check if purpose matches
-        if stored["purpose"] != purpose:
-            logger.warning(f"Verification code purpose mismatch for {email}")
-            return False
-        
-        # Check if code matches
-        if stored["code"] != code:
-            logger.warning(f"Invalid verification code for {email}")
-            return False
-        
-        # Code is valid - remove it (one-time use)
-        del _verification_codes[email]
-        logger.info(f"Verification code validated for {email}")
-        return True
+        if not self.sdk_available:
+            logger.error("Turnkey SDK not available")
+            return {"success": False, "error": "SDK not available"}
+
+        # Check if session exists
+        if otp_id not in _otp_sessions:
+            logger.warning(f"No OTP session found for otpId: {otp_id}")
+            return {"success": False, "error": "Invalid or expired OTP session"}
+
+        session = _otp_sessions[otp_id]
+        if session["email"] != email:
+            logger.warning(f"Email mismatch for OTP session")
+            return {"success": False, "error": "Email mismatch"}
+
+        try:
+            # Generate client keypair for encryption
+            private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
+            public_key = private_key.public_key()
+
+            # Encode public key to base64
+            public_key_bytes = public_key.public_bytes(
+                encoding=serialization.Encoding.DER,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            target_public_key = base64.b64encode(public_key_bytes).decode('utf-8')
+
+            # Verify OTP via Turnkey
+            otp_auth_input = OtpAuthBody(
+                organizationId=self.organization_id,
+                otpId=otp_id,
+                otpCode=code,
+                targetPublicKey=target_public_key
+            )
+
+            response = self.client.otp_auth(otp_auth_input)
+
+            if response.activity and response.activity.status == "ACTIVITY_STATUS_COMPLETED":
+                # Clean up session
+                del _otp_sessions[otp_id]
+                logger.info(f"OTP verified successfully for {email}")
+
+                # Return credentials info (API key details)
+                credentials = None
+                if hasattr(response, 'apiKeyId'):
+                    credentials = {
+                        "api_key_id": response.apiKeyId,
+                        "public_key": target_public_key
+                    }
+
+                return {
+                    "success": True,
+                    "credentials": credentials
+                }
+
+            logger.warning(f"OTP verification failed: {response}")
+            return {"success": False, "error": "Invalid or expired code"}
+
+        except Exception as e:
+            logger.error(f"Error verifying OTP: {e}")
+            return {"success": False, "error": str(e)}
+
 
     def get_user_by_email(self, email: str) -> dict:
         """
