@@ -2352,7 +2352,7 @@
                     <div style="text-align:center;margin-bottom:1.5rem;">
                         <div style="font-size:2.5rem;margin-bottom:0.5rem;">🔐</div>
                         <h3 style="color:#fff;margin-bottom:0.5rem;">Create New Wallet</h3>
-                        <p style="color:#9ca3af;font-size:0.85rem;">Generate a secure MPC-powered wallet</p>
+                        <p style="color:#9ca3af;font-size:0.85rem;">Generate a secure MPC-powered wallet with email verification</p>
                     </div>
                     <div class="wallet-input-group">
                         <label class="wallet-label" for="turnkeyCreateEmail">Email Address</label>
@@ -2362,18 +2362,25 @@
                         <label class="wallet-label" for="turnkeyCreateName">Display Name (Optional)</label>
                         <input type="text" id="turnkeyCreateName" class="wallet-input" placeholder="Your name" autocomplete="name" />
                     </div>
-                    <div class="wallet-input-group" style="margin-top:1rem;">
-                        <label class="wallet-label" for="turnkeyCreatePassword">Password</label>
-                        <input type="password" id="turnkeyCreatePassword" class="wallet-input" placeholder="Create a password" autocomplete="new-password" />
-                    </div>
-                    <div class="wallet-input-group" style="margin-top:1rem;">
-                        <label class="wallet-label" for="turnkeyCreateConfirm">Confirm Password</label>
-                        <input type="password" id="turnkeyCreateConfirm" class="wallet-input" placeholder="Confirm your password" autocomplete="new-password" />
-                    </div>
                     <div id="turnkeyCreateStatus" class="status-message" style="margin-top:1rem;"></div>
-                    <button class="btn-primary" style="width:100%;margin-top:1rem;" onclick="handleTurnkeyCreate()">
-                        Create Wallet
+                    <button class="btn-primary" style="width:100%;margin-top:1rem;" onclick="handleTurnkeySendCode()">
+                        Send Verification Code
                     </button>
+                    <div id="turnkeyVerifySection" style="display:none;margin-top:1.5rem;">
+                        <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:1.5rem;">
+                            <p style="color:#9ca3af;font-size:0.85rem;margin-bottom:1rem;text-align:center;">Enter the 6-digit code sent to your email</p>
+                            <div class="wallet-input-group">
+                                <label class="wallet-label" for="turnkeyVerifyCode">Verification Code</label>
+                                <input type="text" id="turnkeyVerifyCode" class="wallet-input" placeholder="000000" maxlength="6" style="text-align:center;font-size:1.5rem;letter-spacing:0.5rem;" />
+                            </div>
+                            <button class="btn-primary" style="width:100%;margin-top:1rem;" onclick="handleTurnkeyVerify()">
+                                Verify & Create Wallet
+                            </button>
+                            <button type="button" style="background:none;border:none;color:#6b7280;font-size:0.8rem;margin-top:0.75rem;cursor:pointer;" onclick="handleTurnkeyResendCode()">
+                                Didn't receive the code? Resend
+                            </button>
+                        </div>
+                    </div>
                     <p style="text-align:center;margin-top:1rem;color:#6b7280;font-size:0.75rem;">
                         Already have a wallet? <a href="#" onclick="showTurnkeyLoginOptions();return false;" style="color:#a78bfa;">Login here</a>
                     </p>
