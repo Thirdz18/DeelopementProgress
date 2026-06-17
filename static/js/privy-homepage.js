@@ -50,6 +50,7 @@ function PrivyActions() {
             signature,
             message,
             window.getPendingReferralCode(),
+            "privy",
         );
         const warned = Boolean(verifyData && verifyData.referral_warning);
         setStatus({

@@ -6537,6 +6537,7 @@ def wallet_page():
         "wallet.html",
         wallet=wallet,
         login_method=session.get("login_method", "walletconnect"),
+        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         buy_eth_visible=buy_eth_visible,

@@ -1786,6 +1786,13 @@
                 <div style="font-size:0.88rem;color:#fff;">{{ 'GoodMarket' if login_method == 'walletconnect' else (login_method | replace('_', ' ') | title) }}</div>
             </div>
 
+            {% if login_method == 'privy' %}
+            <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.07);">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--text-dim);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Embedded Wallet</div>
+                <div id="privyExportWalletRoot"></div>
+            </div>
+            {% endif %}
+
             <div style="margin-top:1rem;display:flex;gap:0.75rem;">
                 <a href="/overview" class="btn-secondary" style="flex:1;text-align:center;text-decoration:none;display:block;padding:0.8rem;border-radius:14px;background:rgba(255,255,255,0.06);color:var(--text-dim);font-size:0.9rem;font-weight:600;border:1px solid rgba(255,255,255,0.12);">Overview</a>
                 <a href="/logout" class="btn-secondary btn-danger" style="flex:1;text-align:center;text-decoration:none;display:block;padding:0.8rem;border-radius:14px;background:rgba(255,82,82,0.08);color:#ff7070;font-size:0.9rem;font-weight:600;border:1px solid rgba(255,82,82,0.2);">Logout</a>
@@ -1931,6 +1938,10 @@
     <script src="{{ url_for('static', filename='js/tx-error.js', v=ASSET_VERSION) }}"></script>
     <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
+    {% if login_method == 'privy' %}
+    <script type="application/json" id="privyWalletBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
+    <script type="module" src="{{ url_for('static', filename='js/privy-wallet-export.js', v=ASSET_VERSION) }}"></script>
+    {% endif %}
     <!--
         MiniPay gas top-up: detect users with CELO but no stablecoin and
         auto-prompt a CELO -> cUSD swap before tx-bound actions (claim, etc.)
