@@ -1,17 +1,20 @@
 """
-Turnkey Service - Organization Wallet Management
+Turnkey Service - Embedded Wallet Management
 
-NOTE: This is the SERVER-SIDE SDK for Turnkey. This is designed for:
-- Company/organizational wallet management
-- Administrative operations
-- Backend transaction signing
+This service provides embedded wallet functionality using Turnkey's MPC infrastructure
+combined with email verification for user authentication.
 
-For TRUE EMBEDDED WALLETS with email authentication for end users,
-Turnkey recommends their frontend SDK (@turnkey/react-wallet-kit).
+Flow:
+1. User enters email → Send verification code
+2. User enters code → Verify and create wallet/login
+3. Wallet created → User logged in
 
-Reference: https://docs.turnkey.com/solutions/company-wallets/integration-guide/python
+Reference: https://docs.turnkey.com
 """
 import logging
+import random
+import string
+import time
 from typing import Optional, List
 from turnkey_http import TurnkeyClient
 from turnkey_api_key_stamper import ApiKeyStamper, ApiKeyStamperConfig
@@ -36,6 +39,10 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# In-memory storage for verification codes (use Redis in production)
+_verification_codes: dict = {}
+_CODE_EXPIRY_SECONDS = 300  # 5 minutes
 
 
 class TurnkeyService:
@@ -276,6 +283,181 @@ class TurnkeyService:
 
         except Exception as e:
             logger.error(f"Error exporting Turnkey wallet: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def generate_verification_code(self, email: str, purpose: str = "login") -> Optional[str]:
+        """
+        Generate a 6-digit verification code for email verification.
+        
+        Args:
+            email: User's email address
+            purpose: Purpose of the code (login, create)
+            
+        Returns:
+            The generated 6-digit code
+        """
+        # Generate 6-digit code
+        code = ''.join(random.choices(string.digits, k=6))
+        
+        # Store with timestamp
+        _verification_codes[email] = {
+            "code": code,
+            "purpose": purpose,
+            "timestamp": time.time()
+        }
+        
+        logger.info(f"Generated verification code for {email} (purpose: {purpose})")
+        return code
+
+    def verify_code(self, email: str, code: str, purpose: str = "login") -> bool:
+        """
+        Verify a verification code.
+        
+        Args:
+            email: User's email address
+            code: The code to verify
+            purpose: Expected purpose of the code
+            
+        Returns:
+            True if code is valid and not expired
+        """
+        if email not in _verification_codes:
+            logger.warning(f"No verification code found for {email}")
+            return False
+        
+        stored = _verification_codes[email]
+        
+        # Check if expired (5 minutes)
+        if time.time() - stored["timestamp"] > _CODE_EXPIRY_SECONDS:
+            logger.warning(f"Verification code expired for {email}")
+            del _verification_codes[email]
+            return False
+        
+        # Check if purpose matches
+        if stored["purpose"] != purpose:
+            logger.warning(f"Verification code purpose mismatch for {email}")
+            return False
+        
+        # Check if code matches
+        if stored["code"] != code:
+            logger.warning(f"Invalid verification code for {email}")
+            return False
+        
+        # Code is valid - remove it (one-time use)
+        del _verification_codes[email]
+        logger.info(f"Verification code validated for {email}")
+        return True
+
+    def get_user_by_email(self, email: str) -> dict:
+        """
+        Check if a user exists with the given email.
+        
+        For this implementation, we use Supabase to track Turnkey users.
+        
+        Args:
+            email: User's email address
+            
+        Returns:
+            dict with user info if exists
+        """
+        try:
+            from supabase_client import get_supabase_client
+            
+            client = get_supabase_client()
+            if not client:
+                # If Supabase not available, check in-memory storage
+                # This is for development without full setup
+                return {"success": False, "user_id": None}
+            
+            # Query users table for Turnkey user
+            response = client.table("users").select("*").eq("email", email).execute()
+            
+            if response.data and len(response.data) > 0:
+                user = response.data[0]
+                return {
+                    "success": True,
+                    "user_id": user.get("turnkey_user_id"),
+                    "wallet_id": user.get("turnkey_wallet_id"),
+                    "wallet_address": user.get("wallet_address"),
+                    "email": email
+                }
+            else:
+                return {"success": False, "user_id": None}
+                
+        except Exception as e:
+            logger.error(f"Error checking user by email: {e}")
+            return {"success": False, "user_id": None}
+
+    def create_user_and_wallet(
+        self,
+        user_email: str,
+        user_name: str = "GoodMarket User",
+        wallet_name: str = "GoodMarket Wallet"
+    ) -> dict:
+        """
+        Create a new user and associated wallet.
+
+        Args:
+            user_email: User's email address
+            user_name: Display name for the user
+            wallet_name: Name for the wallet
+
+        Returns:
+            dict with success status and wallet details
+        """
+        client = self._get_client()
+        if not client:
+            return {
+                "success": False,
+                "error": "Turnkey not configured"
+            }
+
+        try:
+            # Create wallet
+            wallet_result = self.create_wallet(wallet_name)
+            
+            if not wallet_result.get("success"):
+                return wallet_result
+            
+            wallet_id = wallet_result.get("wallet_id")
+            wallet_address = wallet_result.get("wallet_address")
+            
+            # Generate a mock user ID (in production, use Turnkey's user API)
+            import uuid
+            user_id = f"user_{uuid.uuid4().hex[:16]}"
+            
+            # Store user info in Supabase (if available)
+            try:
+                from supabase_client import get_supabase_client
+                client_db = get_supabase_client()
+                if client_db:
+                    client_db.table("users").upsert({
+                        "email": user_email,
+                        "wallet_address": wallet_address,
+                        "turnkey_user_id": user_id,
+                        "turnkey_wallet_id": wallet_id,
+                        "display_name": user_name
+                    }).execute()
+                    logger.info(f"Stored Turnkey user in database: {user_email}")
+            except Exception as db_error:
+                logger.warning(f"Could not store user in database: {db_error}")
+                # Continue anyway - wallet was created successfully
+
+            logger.info(f"Created Turnkey user and wallet for {user_email}: {wallet_address}")
+
+            return {
+                "success": True,
+                "user_id": user_id,
+                "wallet_id": wallet_id,
+                "wallet_address": wallet_address,
+                "email": user_email
+            }
+
+        except Exception as e:
+            logger.error(f"Error creating Turnkey user/wallet: {e}")
             return {
                 "success": False,
                 "error": str(e)
