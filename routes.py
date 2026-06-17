@@ -11408,14 +11408,19 @@ def turnkey_create_init():
             }), 503
         
         # Generate verification code
-        otp_result = service.generate_verification_code(email, purpose="create")
+        code = service.generate_verification_code(email, purpose="create")
         
-        if otp_result:
-            logger.info(f"OTP initiated for {email}")
+        if code:
+            logger.info(f"Verification code generated for registration: {email}")
+            # Send email with verification code
+            from email_service import send_verification_email
+            email_sent = send_verification_email(email, code, purpose="create")
+            if not email_sent:
+                # Log code for development if email not configured
+                logger.info(f"[DEV] Verification code for {email}: {code}")
             return jsonify({
                 "success": True,
-                "message": "Verification code sent to your email",
-                "otp_id": otp_result.get("otp_id")
+                "message": "Verification code sent to your email"
             })
         else:
             return jsonify({
