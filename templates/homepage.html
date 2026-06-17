@@ -1194,6 +1194,18 @@
             transform: translateY(-2px);
         }
 
+        .wallet-option-card.privy-option {
+            background: linear-gradient(135deg, #7c3aed, #4338ca);
+            border-color: transparent;
+            color: white;
+        }
+
+        .wallet-option-card.privy-option:hover {
+            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.38);
+            border-color: transparent;
+            transform: translateY(-2px);
+        }
+
         .option-icon {
             font-size: 1.5rem;
             flex-shrink: 0;
@@ -1618,6 +1630,8 @@
             });
         }
     </script>
+    <script type="application/json" id="privyHomepageBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
+    <script type="module" src="{{ url_for('static', filename='js/privy-homepage.js', v=ASSET_VERSION) }}"></script>
 </head>
 <body>
     <!-- Header -->
@@ -2124,6 +2138,8 @@
                     <span class="option-arrow">→</span>
                 </button>
             </div>
+
+            <div id="privyWalletRoot"></div>
 
             <!-- Step 2A: WalletConnect / injected -->
             <div class="wallet-form" id="walletConnectOptions">

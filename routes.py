@@ -1533,6 +1533,7 @@ def index():
         }
     return render_template(
         "homepage.html",
+        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         walletconnect_project_id=wc_project_id,
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         homepage_stats=homepage_stats,

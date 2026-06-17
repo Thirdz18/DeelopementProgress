@@ -68,6 +68,7 @@ The app gracefully degrades when these are missing, but full functionality requi
 - `MERCHANT_ADDRESS` — Merchant wallet address for minigames
 - `GAMES_KEY` — Private key for games blockchain transactions
 - `COMMUNITY_KEY` — Private key for community stories rewards
+- `PRIVY_APP_ID` — Privy app ID used by the homepage embedded-wallet flow
 - `PRODUCTION_DOMAIN` — Production domain (defaults to `https://goodmarket.live`)
 
 ### Learn & Earn Streaming Payouts (optional)
