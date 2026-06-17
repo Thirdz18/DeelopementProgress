@@ -11225,7 +11225,7 @@ def turnkey_status():
 @routes.route("/api/turnkey/login-init", methods=["POST"])
 def turnkey_login_init():
     """
-    Initiate login by sending verification code to email.
+    Initiate login by sending OTP to email via Supabase Auth.
     
     Body:
         email: User's email address
@@ -11233,6 +11233,7 @@ def turnkey_login_init():
     Returns:
         success: bool
         message: Status message
+        is_registered: bool (whether email has existing wallet)
     """
     try:
         data = request.get_json(silent=True) or {}
@@ -11244,47 +11245,25 @@ def turnkey_login_init():
         from turnkey_service import get_turnkey_service
         service = get_turnkey_service()
         
-        # Check if SDK is available
-        if not service.sdk_available:
-            return jsonify({
-                "success": False, 
-                "error": "Turnkey SDK is not installed on this server. Please contact the administrator."
-            }), 503
-        
-        if not service.is_configured:
-            return jsonify({
-                "success": False, 
-                "error": "Turnkey is not configured on this server"
-            }), 503
-        
         # Check if user exists with this email
         user_result = service.get_user_by_email(email)
         
-        if user_result.get("success"):
-            # User exists - generate and send verification code
-            code = service.generate_verification_code(email, purpose="login")
-            if code:
-                logger.info(f"Verification code generated for login: {email}")
-                # In production, send email here
-                # For now, log the code (remove in production!)
-                logger.info(f"[DEV] Verification code for {email}: {code}")
-                return jsonify({
-                    "success": True,
-                    "message": "Verification code sent to your email",
-                    "is_registered": True
-                })
-            else:
-                return jsonify({
-                    "success": False,
-                    "error": "Failed to generate verification code"
-                }), 500
-        else:
-            # User doesn't exist
+        # Send OTP via Supabase Auth
+        code = service.generate_verification_code(email, purpose="login")
+        
+        if code or user_result.get("success"):
+            # OTP sent successfully (or will be sent by Supabase)
+            logger.info(f"OTP sent to {email} via Supabase Auth")
             return jsonify({
                 "success": True,
                 "message": "Verification code sent to your email",
-                "is_registered": False
+                "is_registered": user_result.get("success", False)
             })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to send verification code"
+            }), 500
             
     except Exception as e:
         logger.error(f"turnkey_login_init error: {e}")
@@ -11294,11 +11273,15 @@ def turnkey_login_init():
 @routes.route("/api/turnkey/login-verify", methods=["POST"])
 def turnkey_login_verify():
     """
-    Verify login code and authenticate user.
+    Verify login and authenticate user.
+    
+    With Supabase Auth OTP, the OTP verification happens client-side.
+    This endpoint is called after client-side OTP verification to complete login.
     
     Body:
         email: User's email address
-        code: 6-digit verification code
+        supabase_user_id: Supabase Auth user ID (from client-side verification)
+        wallet_address: User's wallet address (optional - for existing users)
     
     Returns:
         success: bool
@@ -11310,37 +11293,39 @@ def turnkey_login_verify():
     try:
         data = request.get_json(silent=True) or {}
         email = data.get("email", "").strip().lower()
-        code = data.get("code", "").strip()
+        supabase_user_id = data.get("supabase_user_id") or data.get("user_id")
+        wallet_address = data.get("wallet_address", "").strip().lower()
         
-        if not email or not code:
-            return jsonify({"success": False, "error": "Email and code are required"}), 400
+        if not email:
+            return jsonify({"success": False, "error": "Email is required"}), 400
         
         from turnkey_service import get_turnkey_service
+        from supabase_client import hash_email
+        
         service = get_turnkey_service()
         
-        if not service.is_configured:
-            return jsonify({
-                "success": False, 
-                "error": "Turnkey is not configured on this server"
-            }), 503
-        
-        # Verify the code
-        is_valid = service.verify_code(email, code, purpose="login")
-        
-        if not is_valid:
-            return jsonify({
-                "success": False,
-                "error": "Invalid or expired verification code"
-            }), 400
-        
-        # Check if user exists
+        # Check if user exists with this email
         user_result = service.get_user_by_email(email)
         
-        if user_result.get("success") and user_result.get("user_id"):
+        if user_result.get("success") and user_result.get("wallet_address"):
             # User exists - get their wallet
             user_id = user_result.get("user_id")
             wallet_id = user_result.get("wallet_id")
             wallet_address = user_result.get("wallet_address")
+            
+            # Update supabase_user_id if provided
+            if supabase_user_id:
+                try:
+                    from supabase_client import get_supabase_admin_client
+                    admin_client = get_supabase_admin_client()
+                    if admin_client:
+                        email_hash = hash_email(email)
+                        admin_client.table("email_wallet_links").update({
+                            "supabase_user_id": supabase_user_id,
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }).eq("email_hash", email_hash).execute()
+                except Exception as update_error:
+                    logger.warning(f"Failed to update supabase_user_id: {update_error}")
             
             # Store in session
             session["wallet"] = wallet_address
@@ -11348,6 +11333,7 @@ def turnkey_login_verify():
             session["turnkey_user_id"] = user_id
             session["turnkey_wallet_id"] = wallet_id
             session["turnkey_email"] = email
+            session["supabase_user_id"] = supabase_user_id
             
             logger.info(f"User logged in via Turnkey: {email}")
             
@@ -11375,7 +11361,7 @@ def turnkey_login_verify():
 @routes.route("/api/turnkey/create-init", methods=["POST"])
 def turnkey_create_init():
     """
-    Initiate wallet creation by sending verification code.
+    Initiate wallet creation by sending OTP via Supabase Auth.
     
     Body:
         email: User's email address
@@ -11396,27 +11382,11 @@ def turnkey_create_init():
         from turnkey_service import get_turnkey_service
         service = get_turnkey_service()
         
-        # Check if SDK is available
-        if not service.sdk_available:
-            return jsonify({
-                "success": False, 
-                "error": "Turnkey SDK is not installed on this server. Please contact the administrator."
-            }), 503
-        
-        if not service.is_configured:
-            return jsonify({
-                "success": False, 
-                "error": "Turnkey is not configured on this server"
-            }), 503
-        
-        # Generate verification code
+        # Send OTP via Supabase Auth
         code = service.generate_verification_code(email, purpose="create")
         
         if code:
-            logger.info(f"Verification code generated for registration: {email}")
-            # In production, send email here
-            # For now, log the code (remove in production!)
-            logger.info(f"[DEV] Verification code for {email}: {code}")
+            logger.info(f"OTP sent to {email} via Supabase Auth for registration")
             return jsonify({
                 "success": True,
                 "message": "Verification code sent to your email"
@@ -11424,7 +11394,7 @@ def turnkey_create_init():
         else:
             return jsonify({
                 "success": False,
-                "error": "Failed to generate verification code"
+                "error": "Failed to send verification code"
             }), 500
             
     except Exception as e:
@@ -11435,12 +11405,15 @@ def turnkey_create_init():
 @routes.route("/api/turnkey/create-verify", methods=["POST"])
 def turnkey_create_verify():
     """
-    Verify code and create new wallet.
+    Verify OTP and create new wallet.
+    
+    With Supabase Auth OTP, the OTP verification happens client-side.
+    This endpoint is called after client-side OTP verification to create wallet.
     
     Body:
         email: User's email address
         user_name: Display name
-        code: 6-digit verification code
+        supabase_user_id: Supabase Auth user ID (from client-side verification)
     
     Returns:
         success: bool
@@ -11453,34 +11426,20 @@ def turnkey_create_verify():
         data = request.get_json(silent=True) or {}
         email = data.get("email", "").strip().lower()
         user_name = data.get("user_name", "GoodMarket User").strip()
-        code = data.get("code", "").strip()
+        supabase_user_id = data.get("supabase_user_id") or data.get("user_id")
         
-        if not email or not code:
-            return jsonify({"success": False, "error": "Email and code are required"}), 400
+        if not email:
+            return jsonify({"success": False, "error": "Email is required"}), 400
         
         from turnkey_service import get_turnkey_service
         service = get_turnkey_service()
         
-        if not service.is_configured:
-            return jsonify({
-                "success": False, 
-                "error": "Turnkey is not configured on this server"
-            }), 503
-        
-        # Verify the code
-        is_valid = service.verify_code(email, code, purpose="create")
-        
-        if not is_valid:
-            return jsonify({
-                "success": False,
-                "error": "Invalid or expired verification code"
-            }), 400
-        
-        # Create user and wallet
+        # Create user and wallet (Supabase Auth verification happens client-side)
         result = service.create_user_and_wallet(
             user_email=email,
             user_name=user_name,
-            wallet_name="GoodMarket Wallet"
+            wallet_name="GoodMarket Wallet",
+            supabase_user_id=supabase_user_id
         )
         
         if result.get("success"):
@@ -11494,6 +11453,7 @@ def turnkey_create_verify():
             session["turnkey_user_id"] = user_id
             session["turnkey_wallet_id"] = wallet_id
             session["turnkey_email"] = email
+            session["supabase_user_id"] = supabase_user_id
             
             logger.info(f"Created Turnkey wallet for {email}: {wallet_address}")
             
@@ -11501,7 +11461,8 @@ def turnkey_create_verify():
                 "success": True,
                 "user_id": user_id,
                 "wallet_id": wallet_id,
-                "wallet_address": wallet_address
+                "wallet_address": wallet_address,
+                "email_hash": result.get("email_hash")
             })
         else:
             logger.error(f"Failed to create Turnkey wallet for {email}: {result.get('error')}")
