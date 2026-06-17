@@ -1976,8 +1976,6 @@ dependencies = [
     { name = "strictyaml" },
     { name = "supabase" },
     { name = "tenacity" },
-    { name = "turnkey-http" },
-    { name = "turnkey-sdk-types" },
     { name = "web3" },
     { name = "websockets" },
 ]
@@ -2006,8 +2004,6 @@ requires-dist = [
     { name = "strictyaml", specifier = ">=1.7.3" },
     { name = "supabase", specifier = ">=2.28.3" },
     { name = "tenacity", specifier = ">=9.1.4" },
-    { name = "turnkey-http", specifier = ">=0.1.0" },
-    { name = "turnkey-sdk-types", specifier = ">=0.1.0" },
     { name = "web3", specifier = ">=7.15.0" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
@@ -2160,44 +2156,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/11/d6/114b492226588d6ff54579d95847662fc69196bdeec318eb45393b24c192/toolz-1.1.0.tar.gz", hash = "sha256:27a5c770d068c110d9ed9323f24f1543e83b2f300a687b7891c1a6d56b697b5b", size = 52613, upload-time = "2025-10-17T04:03:21.661Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/12/5911ae3eeec47800503a238d971e51722ccea5feb8569b735184d5fcdbc0/toolz-1.1.0-py3-none-any.whl", hash = "sha256:15ccc861ac51c53696de0a5d6d4607f99c210739caf987b5d2054f3efed429d8", size = 58093, upload-time = "2025-10-17T04:03:20.435Z" },
-]
-
-[[package]]
-name = "turnkey-api-key-stamper"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a7/f1/dc83fa347ff03354287a03d9a94f31451e59164e02597aa4688eb705bc01/turnkey_api_key_stamper-0.1.0.tar.gz", hash = "sha256:dd06f37476768a6deb5d79f636a330ca2e135fa621bfa3307e7abb0ba57e7f9e", size = 6956, upload-time = "2026-03-09T20:10:21.279Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/28/0f4a318448d5e76acb2c7bc02c9fe253554b6663ea1f1905dbdc36bbe1c3/turnkey_api_key_stamper-0.1.0-py3-none-any.whl", hash = "sha256:4f39916edb6cfbd8b5174c852fb73bc8962b34ce12480adad5a1f3de629a9b60", size = 7470, upload-time = "2026-03-09T20:10:19.919Z" },
-]
-
-[[package]]
-name = "turnkey-http"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "requests" },
-    { name = "turnkey-api-key-stamper" },
-    { name = "turnkey-sdk-types" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b5/0b/8515e1849270bf79baca4de89c445684e522fe58f6812ffc95626287650a/turnkey_http-0.1.0.tar.gz", hash = "sha256:54585f652a7a1a4a5ebb951e43dc5052f587171ec411817f6addb7d4d253b174", size = 19352, upload-time = "2026-03-09T20:18:05.569Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/3b/cb55b00141c3a5e45b96bc16ae5d2090b23e8ebee46e699dfd90adc04e9c/turnkey_http-0.1.0-py3-none-any.whl", hash = "sha256:bcd50321f2c1c070e752df5d4a55fdab4eddf6d8ebf47987b777e8569586cd89", size = 16726, upload-time = "2026-03-09T20:18:04.051Z" },
-]
-
-[[package]]
-name = "turnkey-sdk-types"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/ba/5cd93b7f9eae2cc5f710cd52c8fa16dc8e668461a9a8c3e2256be754c88a/turnkey_sdk_types-0.1.0.tar.gz", hash = "sha256:f02217aad659f0d21ef0f8aff0451179d667e5fde783f55ba4be07ed6b8cea1e", size = 49107, upload-time = "2026-03-09T19:52:18.255Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/82/772c1560f520f1369904e5a225b8061afafd7bfb1ebe373818ac5e443a38/turnkey_sdk_types-0.1.0-py3-none-any.whl", hash = "sha256:b7ee0ecf6cc2ca0902db526aca9b791c9133dd6020c44ce3fc7b44ceb35c83f9", size = 47604, upload-time = "2026-03-09T19:52:16.971Z" },
 ]
 
 [[package]]
