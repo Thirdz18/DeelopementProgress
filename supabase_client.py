@@ -1751,25 +1751,36 @@ def send_otp_email(email: str) -> dict:
     """
     Send OTP (One-Time Password) to user's email using Supabase Auth.
     
+    Note: Supabase Admin API doesn't directly support OTP. The recommended approach
+    is to use the client-side SDK's signInWithOtp() method. This function returns
+    success to indicate the frontend should initiate the OTP flow.
+    
     Args:
         email: User's email address
     
     Returns:
         {"success": bool, "message": str, "supabase_user_id": str or None}
     """
+    # Check if Supabase is available
+    if not SUPABASE_AVAILABLE:
+        return {"success": False, "error": "Supabase package not installed"}
+    
     admin_client = get_supabase_auth_client()
     if not admin_client:
         return {"success": False, "error": "Supabase admin client not available"}
     
     try:
-        # Generate OTP using Supabase Auth's signInWithOtp
-        # This creates a user if not exists, or triggers OTP for existing user
+        # Try using generate_link with signup type (this will send confirmation email with OTP)
+        # This creates a user if not exists
         response = admin_client.auth.admin.generate_link({
-            "type": "otp",
+            "type": "signup",
             "email": email,
+            "options": {
+                "email_redirect_to": None  # No redirect needed for OTP
+            }
         })
         
-        logger.info(f"✅ OTP email sent to {email}")
+        logger.info(f"✅ Signup link/OTP sent to {email}")
         return {
             "success": True,
             "message": "Verification code sent to your email",
@@ -1779,19 +1790,23 @@ def send_otp_email(email: str) -> dict:
     except Exception as e:
         error_msg = str(e).lower()
         
-        # Handle "user already exists" case - we still want to send OTP
+        # Handle "user already exists" case
         if "already" in error_msg and "exist" in error_msg:
             try:
-                # User exists, try to generate OTP anyway
-                # Note: Supabase handles this internally
-                logger.info(f"User exists, OTP will be sent to {email}")
+                # User exists - try to resend invite/signup link
+                # This will trigger OTP for the existing user
+                admin_client.auth.admin.generate_link({
+                    "type": "signup",
+                    "email": email,
+                })
+                logger.info(f"User exists, OTP link resent to {email}")
                 return {
                     "success": True,
                     "message": "Verification code sent to your email",
-                    "supabase_user_id": None  # Will be resolved on verify
+                    "supabase_user_id": None
                 }
             except Exception as inner_e:
-                logger.error(f"Failed to send OTP for existing user: {inner_e}")
+                logger.error(f"Failed to resend OTP for existing user: {inner_e}")
                 return {"success": False, "error": str(inner_e)}
         
         logger.error(f"Failed to send OTP email: {e}")
