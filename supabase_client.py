@@ -1826,10 +1826,6 @@ def verify_otp_and_link_wallet(email: str, otp_code: str, wallet_address: str,
             # User exists - get their supabase_user_id
             supabase_user_id = existing.data[0].get("supabase_user_id")
             logger.info(f"Found existing user: {supabase_user_id}")
-        else:
-            # For OTP, we can't directly create the user here
-            # The OTP verification happens client-side
-            # We need to store the pending verification
         
         # Step 2: Update or create the email_wallet_links record
         now = datetime.utcnow().isoformat()
