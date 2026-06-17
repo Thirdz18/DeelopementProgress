@@ -2,8 +2,8 @@ import React, { useCallback, useState } from "https://esm.sh/react@19.2.7";
 import { createRoot } from "https://esm.sh/react-dom@19.2.7/client";
 import {
     PrivyProvider,
-    useConnectOrCreateWallet,
-    useCreateWallet,
+    useLogin,
+    useWallets,
     usePrivy,
 } from "https://esm.sh/@privy-io/react-auth@3.29.2?deps=react@19.2.7,react-dom@19.2.7";
 
@@ -28,11 +28,13 @@ function statusColor(kind) {
 }
 
 function PrivyActions() {
-    const { ready } = usePrivy();
+    const { ready, authenticated } = usePrivy();
+    const { wallets } = useWallets();
     const [busy, setBusy] = useState(false);
+    const [pendingLogin, setPendingLogin] = useState(false);
     const [status, setStatus] = useState({
         kind: "info",
-        text: "Use Privy to create a fresh embedded wallet.",
+        text: "Sign in with Privy social login to continue.",
     });
 
     const signAndVerify = useCallback(async (wallet, label) => {
@@ -64,57 +66,58 @@ function PrivyActions() {
         }, warned ? 2400 : 900);
     }, []);
 
-    const { connectOrCreateWallet } = useConnectOrCreateWallet({
-        onSuccess: async ({ wallet }) => {
-            try {
-                await signAndVerify(wallet, "Privy wallet");
-            } catch (err) {
-                const message = err && err.message ? err.message : "Privy connect failed";
-                setBusy(false);
-                setStatus({ kind: "error", text: message });
-            }
-        },
+    const { login } = useLogin({
         onError: (error) => {
-            const message = error && error.message ? error.message : "Privy connect failed";
+            const message = error && error.message ? error.message : "Privy social login failed";
+            setPendingLogin(false);
             setBusy(false);
             setStatus({ kind: "error", text: message });
         },
     });
-    const { createWallet } = useCreateWallet();
 
-    const runConnect = useCallback(async () => {
+    const runLogin = useCallback(async () => {
         if (!ready) {
             setStatus({ kind: "warning", text: "Privy is still loading." });
             return;
         }
         setBusy(true);
+        setPendingLogin(true);
         try {
-            setStatus({ kind: "info", text: "Opening Privy to connect a wallet…" });
-            await connectOrCreateWallet();
+            setStatus({ kind: "info", text: "Opening Privy social login…" });
+            await login();
         } catch (err) {
-            const message = err && err.message ? err.message : "Privy connect failed";
+            const message = err && err.message ? err.message : "Privy social login failed";
             setStatus({ kind: "error", text: message });
+            setPendingLogin(false);
             setBusy(false);
         }
-    }, [connectOrCreateWallet, ready]);
+    }, [login, ready]);
 
-    const runCreate = useCallback(async () => {
-        if (!ready) {
-            setStatus({ kind: "warning", text: "Privy is still loading." });
-            return;
-        }
-        setBusy(true);
-        try {
-            setStatus({ kind: "info", text: "Creating a new embedded wallet…" });
-            const wallet = await createWallet({ createAdditional: false });
-            await signAndVerify(wallet, "embedded wallet");
-        } catch (err) {
-            const message = err && err.message ? err.message : "Privy wallet creation failed";
-            setStatus({ kind: "error", text: message });
-        } finally {
-            setBusy(false);
-        }
-    }, [createWallet, ready, signAndVerify]);
+    const walletList = Array.isArray(wallets) ? wallets : [];
+    const selectedWallet = walletList.find((wallet) => wallet && wallet.walletClientType === "privy" && wallet.chainType === "ethereum")
+        || walletList.find((wallet) => wallet && wallet.walletClientType === "privy")
+        || walletList[0]
+        || null;
+
+    React.useEffect(() => {
+        if (!pendingLogin || !ready || !authenticated || !selectedWallet) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                setPendingLogin(false);
+                await signAndVerify(selectedWallet, "Social login");
+            } catch (err) {
+                if (cancelled) return;
+                const message = err && err.message ? err.message : "Privy sign-in failed";
+                setStatus({ kind: "error", text: message });
+                setBusy(false);
+                setPendingLogin(false);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [authenticated, pendingLogin, ready, selectedWallet, signAndVerify]);
 
     return h(
         "div",
@@ -130,60 +133,32 @@ function PrivyActions() {
         h(
             "div",
             { style: { display: "flex", flexDirection: "column", gap: "0.25rem", marginBottom: "0.75rem" } },
-            h("div", { style: { fontSize: "0.98rem", fontWeight: "800", color: "#1f2937" } }, "Privy embedded wallet"),
+            h("div", { style: { fontSize: "0.98rem", fontWeight: "800", color: "#1f2937" } }, "Privy social login"),
             h(
                 "div",
                 { style: { fontSize: "0.78rem", color: "#6b7280", lineHeight: "1.45" } },
-                "Connect an existing wallet or create a fresh embedded wallet with your Privy app."
+                "Open Privy's login modal, then sign in with Google or another configured method."
             )
         ),
         h(
-            "div",
+            "button",
             {
+                type: "button",
+                disabled: busy || !ready,
+                onClick: runLogin,
                 style: {
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: "0.6rem",
+                    width: "100%",
+                    border: "none",
+                    borderRadius: "12px",
+                    padding: "0.9rem 1rem",
+                    background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                    color: "white",
+                    fontWeight: "800",
+                    cursor: busy || !ready ? "not-allowed" : "pointer",
+                    opacity: busy || !ready ? 0.72 : 1,
                 },
             },
-            h(
-                "button",
-                {
-                    type: "button",
-                    disabled: busy || !ready,
-                    onClick: runConnect,
-                    style: {
-                        border: "none",
-                        borderRadius: "12px",
-                        padding: "0.8rem 0.9rem",
-                        background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                        color: "white",
-                        fontWeight: "800",
-                        cursor: busy || !ready ? "not-allowed" : "pointer",
-                        opacity: busy || !ready ? 0.72 : 1,
-                    },
-                },
-                busy ? "Opening…" : "Connect with Privy"
-            ),
-            h(
-                "button",
-                {
-                    type: "button",
-                    disabled: busy || !ready,
-                    onClick: runCreate,
-                    style: {
-                        border: "none",
-                        borderRadius: "12px",
-                        padding: "0.8rem 0.9rem",
-                        background: "linear-gradient(135deg, #10b981, #059669)",
-                        color: "white",
-                        fontWeight: "800",
-                        cursor: busy || !ready ? "not-allowed" : "pointer",
-                        opacity: busy || !ready ? 0.72 : 1,
-                    },
-                },
-                busy ? "Opening…" : "Create New Wallet"
-            )
+            busy ? "Opening…" : "Social Login"
         ),
         h(
             "button",
@@ -246,6 +221,9 @@ function App({ appId }) {
         {
             appId,
             config: {
+                appearance: {
+                    showWalletLoginFirst: false,
+                },
                 embeddedWallets: {
                     ethereum: {
                         createOnLogin: "users-without-wallets",
