@@ -84,6 +84,10 @@ function PrivyActions() {
         setPendingLogin(true);
         try {
             setStatus({ kind: "info", text: "Opening Privy social login…" });
+            // Close the wallet modal so it doesn't cover the Privy login modal
+            if (typeof window.closeWalletModal === "function") {
+                window.closeWalletModal();
+            }
             await login();
         } catch (err) {
             const message = err && err.message ? err.message : "Privy social login failed";
