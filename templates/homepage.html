@@ -2266,7 +2266,8 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['walletConnectOptions'].forEach(id => {
+            // Hide all form views when showing options
+            ['walletConnectOptions', 'turnkeyLoginForm', 'turnkeyCreateForm'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -2293,6 +2294,12 @@
         // Turnkey: Login with Email
         function showTurnkeyLoginOptions() {
             document.getElementById('walletOptions').style.display = 'none';
+            // Hide other forms
+            const createForm = document.getElementById('turnkeyCreateForm');
+            if (createForm) createForm.classList.remove('visible');
+            const wcForm = document.getElementById('walletConnectOptions');
+            if (wcForm) wcForm.classList.remove('visible');
+
             let formDiv = document.getElementById('turnkeyLoginForm');
             if (!formDiv) {
                 formDiv = document.createElement('div');
@@ -2329,6 +2336,12 @@
         // Turnkey: Create New Wallet
         function showTurnkeyCreateWallet() {
             document.getElementById('walletOptions').style.display = 'none';
+            // Hide other forms
+            const loginForm = document.getElementById('turnkeyLoginForm');
+            if (loginForm) loginForm.classList.remove('visible');
+            const wcForm = document.getElementById('walletConnectOptions');
+            if (wcForm) wcForm.classList.remove('visible');
+
             let formDiv = document.getElementById('turnkeyCreateForm');
             if (!formDiv) {
                 formDiv = document.createElement('div');
