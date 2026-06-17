@@ -1939,6 +1939,10 @@
     <!-- Shared WalletConnect bridge (claim / send / FV signing fallback for WC users). -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     {% if login_method == 'privy' %}
+    <script type="application/json" id="privySignerBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
+    <script type="module" src="{{ url_for('static', filename='js/privy-signer-bridge.js', v=ASSET_VERSION) }}"></script>
+    {% endif %}
+    {% if login_method == 'privy' %}
     <script type="application/json" id="privyWalletBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
     <script type="module" src="{{ url_for('static', filename='js/privy-wallet-export.js', v=ASSET_VERSION) }}"></script>
     {% endif %}
@@ -2164,6 +2168,9 @@
     }
 
     function _getEthProvider() {
+        if (typeof LOGIN_METHOD === 'string' && LOGIN_METHOD.toLowerCase() === 'privy' && typeof window.__getPrivyEthereumProvider === 'function') {
+            return window.__privyEthereumProvider || null;
+        }
         // Re-dispatch EIP-6963 discovery on every call — Trust Wallet mobile
         // and some MetaMask Mobile builds announce only after the dApp asks,
         // and idempotent re-dispatch costs nothing for wallets that don't.
