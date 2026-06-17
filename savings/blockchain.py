@@ -42,6 +42,18 @@ from web3 import Web3
 logger = logging.getLogger(__name__)
 
 CELO_RPC_URL = os.getenv('CELO_RPC_URL', 'https://forno.celo.org')
+CELO_RPC_URLS = tuple(
+    url.strip()
+    for url in (
+        os.getenv('CELO_RPC_URLS', '')
+        or ','.join([
+            CELO_RPC_URL,
+            'https://1rpc.io/celo',
+            'https://celo.publicnode.com',
+        ])
+    ).split(',')
+    if url.strip()
+)
 CHAIN_ID = int(os.getenv('CHAIN_ID', 42220))
 SAVINGS_CONTRACT_ADDRESS = os.getenv('SAVINGS_CONTRACT_ADDRESS', '')
 SAVINGS_DEPLOYMENT_BLOCK = int(os.getenv('SAVINGS_DEPLOYMENT_BLOCK', '65917286'))
@@ -63,10 +75,11 @@ LEGACY_V4_CONTRACT_ADDRESS = os.getenv(
 # old (single-token, deposit-id-based) saves can still see and withdraw them.
 LEGACY_V2_CONTRACT_ADDRESS = '0xF3cca43F5C108d3dEf01Ff1E138866aC1ed00e9c'
 
+_w3_pool = {}
+_w3_lock = threading.Lock()
 _history_cache = {}
 _history_cache_lock = threading.Lock()
 HISTORY_CACHE_TTL = 300
-
 # Map of supported tokens, used by the frontend / API to label slots.
 # USDT uses 6 decimals; all others are 18. Anywhere we convert raw on-chain
 # amounts to human-readable values we must scale by the token's own decimals
@@ -193,6 +206,25 @@ SAVINGS_ABI = [
         "stateMutability": "view",
         "type": "function",
     },
+    # ── View: contract stats (v5 — USDT added) ──────────────────────────
+    {
+        "inputs": [],
+        "name": "getContractStats",
+        "outputs": [
+            {"internalType": "uint256", "name": "totalLockedGd",       "type": "uint256"},
+            {"internalType": "uint256", "name": "totalLockedCelo",     "type": "uint256"},
+            {"internalType": "uint256", "name": "totalLockedCusd",     "type": "uint256"},
+            {"internalType": "uint256", "name": "totalLockedUsdt",     "type": "uint256"},
+            {"internalType": "uint256", "name": "rewardPoolBalance",   "type": "uint256"},
+            {"internalType": "uint256", "name": "contractGdBalance",   "type": "uint256"},
+            {"internalType": "uint256", "name": "contractCeloBalance", "type": "uint256"},
+            {"internalType": "uint256", "name": "contractCusdBalance", "type": "uint256"},
+            {"internalType": "uint256", "name": "contractUsdtBalance", "type": "uint256"},
+            {"internalType": "uint256", "name": "slotsOpenedTotal",    "type": "uint256"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
     {
         "anonymous": False,
         "inputs": [
@@ -218,25 +250,6 @@ SAVINGS_ABI = [
         ],
         "name": "Withdrawn",
         "type": "event",
-    },
-    # ── View: contract stats (v5 — USDT added) ──────────────────────────
-    {
-        "inputs": [],
-        "name": "getContractStats",
-        "outputs": [
-            {"internalType": "uint256", "name": "totalLockedGd",       "type": "uint256"},
-            {"internalType": "uint256", "name": "totalLockedCelo",     "type": "uint256"},
-            {"internalType": "uint256", "name": "totalLockedCusd",     "type": "uint256"},
-            {"internalType": "uint256", "name": "totalLockedUsdt",     "type": "uint256"},
-            {"internalType": "uint256", "name": "rewardPoolBalance",   "type": "uint256"},
-            {"internalType": "uint256", "name": "contractGdBalance",   "type": "uint256"},
-            {"internalType": "uint256", "name": "contractCeloBalance", "type": "uint256"},
-            {"internalType": "uint256", "name": "contractCusdBalance", "type": "uint256"},
-            {"internalType": "uint256", "name": "contractUsdtBalance", "type": "uint256"},
-            {"internalType": "uint256", "name": "slotsOpenedTotal",    "type": "uint256"},
-        ],
-        "stateMutability": "view",
-        "type": "function",
     },
     # ── View: bonus calculator ───────────────────────────────────────────
     {
@@ -389,7 +402,23 @@ ERC20_ABI = [
 
 
 def get_w3():
-    return Web3(Web3.HTTPProvider(CELO_RPC_URL))
+    with _w3_lock:
+        urls = list(CELO_RPC_URLS) or [CELO_RPC_URL]
+        for url in urls:
+            w3 = _w3_pool.get(url)
+            if w3 is None:
+                w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": 8}))
+                _w3_pool[url] = w3
+            try:
+                if w3.is_connected():
+                    return w3
+            except Exception:
+                continue
+        fallback = urls[0]
+        return _w3_pool.setdefault(
+            fallback,
+            Web3(Web3.HTTPProvider(fallback, request_kwargs={"timeout": 8})),
+        )
 
 
 def get_savings_contract(w3):
@@ -542,7 +571,6 @@ def _history_cache_set(wallet_address, value):
 
 def _log_event(log):
     args = getattr(log, "args", None) or {}
-    get = args.get if hasattr(args, "get") else lambda k, d=None: args[k] if k in args else d
     return {
         "blockNumber": int(getattr(log, "blockNumber", 0) or 0),
         "logIndex": int(getattr(log, "logIndex", getattr(log, "index", 0)) or 0),
@@ -659,7 +687,6 @@ def get_user_history(wallet_address):
     except Exception as e:
         logger.error(f"get_user_history error: {e}")
         return []
-
 
 def get_token_allowance(wallet_address, token_address):
     """Check how much `token_address` the user has approved for the savings contract."""

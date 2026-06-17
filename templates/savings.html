@@ -1301,11 +1301,24 @@
         }
         return window.ethereum || providers[0];
     }
+    async function _walletGetWcProviderIfPreferred() {
+        try {
+            if (typeof GMWalletConnect === "undefined") return null;
+            if (!GMWalletConnect.isPreferred()) return null;
+            return GMWalletConnect.getProvider();
+        } catch (_) {
+            return null;
+        }
+    }
     async function _awaitEthProvider(timeoutMs) {
         const budget = typeof timeoutMs === 'number'
             ? timeoutMs
             : (_isTrustWalletMobileContext() ? 3200 : (_isLikelyMobileWalletContext() ? 2200 : 800));
         const start = Date.now();
+        if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
+            const wcProvider = await _walletGetWcProviderIfPreferred();
+            if (wcProvider) return wcProvider;
+        }
         let ep = _getEthProvider();
         if (ep) return ep;
         while (Date.now() - start < budget) {
@@ -1314,11 +1327,9 @@
             ep = _getEthProvider();
             if (ep) return ep;
         }
-        // No injected provider found - try WalletConnect bridge as fallback
+        // No injected provider found - try WalletConnect bridge as fallback.
         if (typeof GMWalletConnect !== "undefined" && GMWalletConnect.isPreferred()) {
-            try {
-                return await GMWalletConnect.getProvider();
-            } catch (_) { /* fall through to null */ }
+            try { return await GMWalletConnect.getProvider(); } catch (_) { /* fall through to null */ }
         }
         return null;
     }
@@ -1785,10 +1796,10 @@
         container.innerHTML = '<div class="empty-state">Loading…</div>';
 
         const activePromise  = fetch('/savings/api/deposits').then(r => r.json()).catch(() => ({ deposits: [] }));
-        const historyPromise = loadOnchainSavingsHistory(WALLET).catch(err => {
-            console.warn('on-chain history reconstruction failed:', err);
-            return null;
-        });
+        const historyPromise = fetch('/savings/api/history')
+            .then(r => r.json())
+            .then(data => (data && Array.isArray(data.history)) ? data.history : null)
+            .catch(() => null);
 
         let activeDeps = [];
         try {
@@ -1804,7 +1815,10 @@
         }
         checkExistingSlot();
 
-        const onchain = await historyPromise;
+        const onchain = await historyPromise || await loadOnchainSavingsHistory(WALLET).catch(err => {
+            console.warn('on-chain history reconstruction failed:', err);
+            return null;
+        });
 
         // Merge: active state from /api/deposits is the source of truth for
         // pending bonus + bonus-claimed flags on still-open slots; on-chain
@@ -1900,7 +1914,7 @@
         renderWithdrawnHistory(withdrawn);
 
         if (!onchain) {
-            showAlert('depositsAlert', 'warn', '⚠️ Could not reach Celo RPC to load full withdrawn history. Showing active saves only.');
+            showAlert('depositsAlert', 'warn', '⚠️ Could not load full withdrawn history right now. Showing active saves only.');
         }
     }
 
