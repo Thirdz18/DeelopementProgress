@@ -21,6 +21,19 @@ TURNKEY_ORGANIZATION_ID = os.getenv('TURNKEY_ORGANIZATION_ID', '')
 TURNKEY_API_BASE_URL = os.getenv('TURNKEY_API_BASE_URL', 'https://api.turnkey.com')
 
 # ============================
+# Email Configuration (for verification codes)
+# ============================
+# SMTP Settings for sending verification emails
+EMAIL_ENABLED = os.getenv('EMAIL_ENABLED', 'false').lower() == 'true'
+EMAIL_HOST = os.getenv('EMAIL_HOST', '')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USERNAME = os.getenv('EMAIL_USERNAME', '')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'true').lower() == 'true'
+EMAIL_FROM = os.getenv('EMAIL_FROM', 'noreply@goodmarket.live')
+EMAIL_FROM_NAME = os.getenv('EMAIL_FROM_NAME', 'GoodMarket')
+
+# ============================
 # Superfluid P2P Streaming Configuration
 # ============================
 # GoodDollar G$ is a Pure SuperToken on Celo (chain 42220) - no wrapping needed!
