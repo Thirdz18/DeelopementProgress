@@ -11265,9 +11265,12 @@ def turnkey_login_init():
             code = service.generate_verification_code(email, purpose="login")
             if code:
                 logger.info(f"Verification code generated for login: {email}")
-                # In production, send email here
-                # For now, log the code (remove in production!)
-                logger.info(f"[DEV] Verification code for {email}: {code}")
+                # Send email with verification code
+                from email_service import send_verification_email
+                email_sent = send_verification_email(email, code, purpose="login")
+                if not email_sent:
+                    # Log code for development if email not configured
+                    logger.info(f"[DEV] Verification code for {email}: {code}")
                 return jsonify({
                     "success": True,
                     "message": "Verification code sent to your email",
@@ -11414,9 +11417,12 @@ def turnkey_create_init():
         
         if code:
             logger.info(f"Verification code generated for registration: {email}")
-            # In production, send email here
-            # For now, log the code (remove in production!)
-            logger.info(f"[DEV] Verification code for {email}: {code}")
+            # Send email with verification code
+            from email_service import send_verification_email
+            email_sent = send_verification_email(email, code, purpose="create")
+            if not email_sent:
+                # Log code for development if email not configured
+                logger.info(f"[DEV] Verification code for {email}: {code}")
             return jsonify({
                 "success": True,
                 "message": "Verification code sent to your email"
