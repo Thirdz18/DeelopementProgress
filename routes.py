@@ -11220,3 +11220,282 @@ def turnkey_status():
             "configured": False,
             "error": str(e)
         }), 500
+
+
+@routes.route("/api/turnkey/login-init", methods=["POST"])
+def turnkey_login_init():
+    """
+    Initiate login by sending verification code to email.
+    
+    Body:
+        email: User's email address
+    
+    Returns:
+        success: bool
+        message: Status message
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        email = data.get("email", "").strip().lower()
+        
+        if not email or "@" not in email:
+            return jsonify({"success": False, "error": "Valid email is required"}), 400
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        # Check if user exists with this email
+        user_result = service.get_user_by_email(email)
+        
+        if user_result.get("success"):
+            # User exists - generate and send verification code
+            code = service.generate_verification_code(email, purpose="login")
+            if code:
+                logger.info(f"Verification code generated for login: {email}")
+                # In production, send email here
+                # For now, log the code (remove in production!)
+                logger.info(f"[DEV] Verification code for {email}: {code}")
+                return jsonify({
+                    "success": True,
+                    "message": "Verification code sent to your email",
+                    "is_registered": True
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to generate verification code"
+                }), 500
+        else:
+            # User doesn't exist
+            return jsonify({
+                "success": True,
+                "message": "Verification code sent to your email",
+                "is_registered": False
+            })
+            
+    except Exception as e:
+        logger.error(f"turnkey_login_init error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/turnkey/login-verify", methods=["POST"])
+def turnkey_login_verify():
+    """
+    Verify login code and authenticate user.
+    
+    Body:
+        email: User's email address
+        code: 6-digit verification code
+    
+    Returns:
+        success: bool
+        logged_in: bool
+        is_new_user: bool
+        wallet_id: Turnkey wallet ID (if exists)
+        error: Error message if failed
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        email = data.get("email", "").strip().lower()
+        code = data.get("code", "").strip()
+        
+        if not email or not code:
+            return jsonify({"success": False, "error": "Email and code are required"}), 400
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        # Verify the code
+        is_valid = service.verify_code(email, code, purpose="login")
+        
+        if not is_valid:
+            return jsonify({
+                "success": False,
+                "error": "Invalid or expired verification code"
+            }), 400
+        
+        # Check if user exists
+        user_result = service.get_user_by_email(email)
+        
+        if user_result.get("success") and user_result.get("user_id"):
+            # User exists - get their wallet
+            user_id = user_result.get("user_id")
+            wallet_id = user_result.get("wallet_id")
+            wallet_address = user_result.get("wallet_address")
+            
+            # Store in session
+            session["wallet"] = wallet_address
+            session["verified"] = True
+            session["turnkey_user_id"] = user_id
+            session["turnkey_wallet_id"] = wallet_id
+            session["turnkey_email"] = email
+            
+            logger.info(f"User logged in via Turnkey: {email}")
+            
+            return jsonify({
+                "success": True,
+                "logged_in": True,
+                "is_new_user": False,
+                "wallet_id": wallet_id,
+                "wallet_address": wallet_address
+            })
+        else:
+            # User verified but no wallet - they need to create one
+            return jsonify({
+                "success": True,
+                "logged_in": False,
+                "is_new_user": True,
+                "message": "Email verified. No wallet found."
+            })
+            
+    except Exception as e:
+        logger.error(f"turnkey_login_verify error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/turnkey/create-init", methods=["POST"])
+def turnkey_create_init():
+    """
+    Initiate wallet creation by sending verification code.
+    
+    Body:
+        email: User's email address
+        user_name: Display name (optional)
+    
+    Returns:
+        success: bool
+        message: Status message
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        email = data.get("email", "").strip().lower()
+        user_name = data.get("user_name", "GoodMarket User").strip()
+        
+        if not email or "@" not in email:
+            return jsonify({"success": False, "error": "Valid email is required"}), 400
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        # Generate verification code
+        code = service.generate_verification_code(email, purpose="create")
+        
+        if code:
+            logger.info(f"Verification code generated for registration: {email}")
+            # In production, send email here
+            # For now, log the code (remove in production!)
+            logger.info(f"[DEV] Verification code for {email}: {code}")
+            return jsonify({
+                "success": True,
+                "message": "Verification code sent to your email"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to generate verification code"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"turnkey_create_init error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@routes.route("/api/turnkey/create-verify", methods=["POST"])
+def turnkey_create_verify():
+    """
+    Verify code and create new wallet.
+    
+    Body:
+        email: User's email address
+        user_name: Display name
+        code: 6-digit verification code
+    
+    Returns:
+        success: bool
+        user_id: Turnkey user ID
+        wallet_id: Turnkey wallet ID
+        wallet_address: Wallet address
+        error: Error message if failed
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        email = data.get("email", "").strip().lower()
+        user_name = data.get("user_name", "GoodMarket User").strip()
+        code = data.get("code", "").strip()
+        
+        if not email or not code:
+            return jsonify({"success": False, "error": "Email and code are required"}), 400
+        
+        from turnkey_service import get_turnkey_service
+        service = get_turnkey_service()
+        
+        if not service.is_configured:
+            return jsonify({
+                "success": False, 
+                "error": "Turnkey is not configured on this server"
+            }), 503
+        
+        # Verify the code
+        is_valid = service.verify_code(email, code, purpose="create")
+        
+        if not is_valid:
+            return jsonify({
+                "success": False,
+                "error": "Invalid or expired verification code"
+            }), 400
+        
+        # Create user and wallet
+        result = service.create_user_and_wallet(
+            user_email=email,
+            user_name=user_name,
+            wallet_name="GoodMarket Wallet"
+        )
+        
+        if result.get("success"):
+            user_id = result.get("user_id")
+            wallet_id = result.get("wallet_id")
+            wallet_address = result.get("wallet_address")
+            
+            # Store in session
+            session["wallet"] = wallet_address
+            session["verified"] = True
+            session["turnkey_user_id"] = user_id
+            session["turnkey_wallet_id"] = wallet_id
+            session["turnkey_email"] = email
+            
+            logger.info(f"Created Turnkey wallet for {email}: {wallet_address}")
+            
+            return jsonify({
+                "success": True,
+                "user_id": user_id,
+                "wallet_id": wallet_id,
+                "wallet_address": wallet_address
+            })
+        else:
+            logger.error(f"Failed to create Turnkey wallet for {email}: {result.get('error')}")
+            return jsonify({
+                "success": False,
+                "error": result.get("error", "Failed to create wallet")
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"turnkey_create_verify error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
