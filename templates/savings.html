@@ -347,6 +347,28 @@
             </div>
         </div>
 
+        <div class="card" id="legacyV5Card" style="display:none; margin-top:1.25rem; border-color:rgba(167,139,250,.22); background:rgba(167,139,250,.04);">
+            <button type="button"
+                    id="legacyV5Toggle"
+                    onclick="toggleLegacyV5()"
+                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
+                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
+                    ⏪Legacy v5 Saves
+                    <span id="legacyV5Count" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(167,139,250,.22); color:#ddd6fe; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
+                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(167,139,250,.16); color:#c4b5fd; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">WITHDRAW-ONLY</span>
+                </span>
+                <span id="legacyV5Chevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▾</span>
+            </button>
+            <div id="legacyV5Body" style="display:none; margin-top:.95rem;">
+                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
+                    Old v5 slots remain withdrawable here while the new v6 flow runs on the current contract. Top-ups and new deposits should go to v6; this panel is only for legacy v5 withdrawals.
+                </p>
+                <div id="legacyV5List" class="dep-list">
+                    <div class="empty-state">No legacy v5 saves yet.</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Withdrawn history panel — collapsible and built from on-chain
              events. Source of truth is the current contract, not localStorage. -->
         <div class="card" id="withdrawnCard" style="display:none; margin-top:1.25rem; border-color:rgba(148,163,184,.22); background:rgba(148,163,184,.04);">
@@ -517,6 +539,7 @@
 <script>
     const WALLET = "{{ wallet }}";
     const SAVINGS_CONTRACT = "{{ savings_contract }}";
+    const LEGACY_V5_CONTRACT = "{{ legacy_v5_contract }}";
     const GD_CONTRACT   = "{{ gd_contract }}";
     const CELO_CONTRACT = "{{ celo_contract }}";
     const CUSD_CONTRACT = "{{ cusd_contract }}";
@@ -869,6 +892,56 @@
             document.getElementById('summaryUnlocks').textContent = d.toDateString();
         } else {
             document.getElementById('summaryUnlocks').textContent = '—';
+        }
+    }
+
+    function toggleLegacyV5() {
+        const body = document.getElementById('legacyV5Body');
+        const chev = document.getElementById('legacyV5Chevron');
+        const open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        chev.textContent = open ? '▾' : '▴';
+    }
+
+    async function loadLegacyV5Deposits() {
+        const card = document.getElementById('legacyV5Card');
+        const body = document.getElementById('legacyV5Body');
+        const chev = document.getElementById('legacyV5Chevron');
+        const list = document.getElementById('legacyV5List');
+        const countEl = document.getElementById('legacyV5Count');
+        if (!card || !body || !chev || !list || !countEl || !LEGACY_V5_CONTRACT) {
+            return;
+        }
+        try {
+            const data = await fetch('/savings/api/legacy-v5-deposits').then(r => r.json());
+            const deps = (data.deposits || []).map(d => ({
+                ...d,
+                withdraw_contract: LEGACY_V5_CONTRACT,
+            }));
+            if (deps.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+            const ready = deps.filter(d => d.is_unlocked);
+            countEl.textContent = ready.length > 0
+                ? `${ready.length} ready · ${deps.length} total`
+                : `${deps.length} locked`;
+            list.innerHTML = '';
+            const ordered = [...ready, ...deps.filter(d => !d.is_unlocked)];
+            for (const d of ordered) {
+                list.appendChild(buildDepCard(d));
+            }
+            card.style.display = 'block';
+            if (ready.length > 0) {
+                body.style.display = 'block';
+                chev.textContent = '▴';
+            } else {
+                body.style.display = 'none';
+                chev.textContent = '▾';
+            }
+        } catch (e) {
+            console.warn('Legacy v5 load failed', e);
+            card.style.display = 'none';
         }
     }
 
@@ -1549,14 +1622,14 @@
     }
 
     // ── Withdraw ──
-    async function doWithdraw(tokenAddr, lockDays) {
+    async function doWithdraw(tokenAddr, lockDays, contractAddr = SAVINGS_CONTRACT) {
         try {
             const args = [tokenAddr, BigInt(lockDays)];
             const fn   = "function withdraw(address token, uint256 lockDays) external";
 
             if (window.useServerSigning) {
                 showAlert('depositsAlert', 'info', '<span class="spinner"></span> Signing withdrawal server-side…');
-                const txHash = await serverSignedTx(SAVINGS_CONTRACT, fn, args);
+                const txHash = await serverSignedTx(contractAddr, fn, args);
                 showAlert('depositsAlert', 'success',
                     `✅ Withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
                 );
@@ -1566,7 +1639,7 @@
 
             if (_isMiniPay()) {
                 showAlert('depositsAlert', 'info', '<span class="spinner"></span> Confirm withdrawal in MiniPay…');
-                const txHash = await _miniPayTx(SAVINGS_CONTRACT, fn, args);
+                const txHash = await _miniPayTx(contractAddr, fn, args);
                 showAlert('depositsAlert', 'success',
                     `✅ Withdrawn successfully! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
                 );
@@ -1576,7 +1649,7 @@
 
             const signer = await getSigner();
             await ensureCeloNetwork();
-            const savings = new ethers.Contract(SAVINGS_CONTRACT, SAVINGS_ABI, signer);
+            const savings = new ethers.Contract(contractAddr, SAVINGS_ABI, signer);
 
             showAlert('depositsAlert', 'info', '<span class="spinner"></span> Confirm withdrawal in your wallet…');
             const tx = await savings.withdraw(tokenAddr, BigInt(lockDays));
@@ -1632,6 +1705,7 @@
     async function loadDeposits() {
         // Load the current contract state immediately, in parallel with the
         // history fetch below.
+        loadLegacyV5Deposits();
 
         const container = document.getElementById('depList');
         container.innerHTML = '<div class="empty-state">Loading…</div>';
@@ -1859,7 +1933,8 @@
 
         let withdrawBtn = '';
         if (d.is_unlocked) {
-            withdrawBtn = `<button class="btn btn-green" onclick="doWithdraw('${d.token}', ${d.lock_days})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw</button>`;
+            const withdrawContract = d.withdraw_contract || SAVINGS_CONTRACT;
+            withdrawBtn = `<button class="btn btn-green" onclick="doWithdraw('${d.token}', ${d.lock_days}, '${withdrawContract}')" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw</button>`;
         }
 
         el.innerHTML = `

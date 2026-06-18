@@ -51,6 +51,7 @@ CELO_RPC_URLS = tuple(
 )
 CHAIN_ID = int(os.getenv('CHAIN_ID', 42220))
 SAVINGS_CONTRACT_ADDRESS = os.getenv('SAVINGS_CONTRACT_ADDRESS', '')
+LEGACY_V5_CONTRACT_ADDRESS = os.getenv('LEGACY_V5_CONTRACT_ADDRESS', '')
 SAVINGS_DEPLOYMENT_BLOCK = int(os.getenv('SAVINGS_DEPLOYMENT_BLOCK', '65917286'))
 GD_TOKEN_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
 CELO_TOKEN_ADDRESS = os.getenv('CELO_TOKEN_ADDRESS', '0x471EcE3750Da237f93B8E339c536989b8978a438')
@@ -361,8 +362,14 @@ def get_w3():
 def get_savings_contract(w3):
     if not SAVINGS_CONTRACT_ADDRESS:
         raise ValueError("SAVINGS_CONTRACT_ADDRESS not set")
+    return get_savings_contract_at(w3, SAVINGS_CONTRACT_ADDRESS)
+
+
+def get_savings_contract_at(w3, contract_address):
+    if not contract_address:
+        raise ValueError("contract address not set")
     return w3.eth.contract(
-        address=Web3.to_checksum_address(SAVINGS_CONTRACT_ADDRESS),
+        address=Web3.to_checksum_address(contract_address),
         abi=SAVINGS_ABI,
     )
 
@@ -476,13 +483,30 @@ def get_user_deposits(wallet_address):
     """
     try:
         w3 = get_w3()
-        contract = get_savings_contract(w3)
+        return get_user_deposits_at(wallet_address, SAVINGS_CONTRACT_ADDRESS, w3=w3)
+    except Exception as e:
+        logger.error(f"get_user_deposits error: {e}")
+        return []
+
+
+def get_user_deposits_at(wallet_address, contract_address, w3=None):
+    if not contract_address:
+        return []
+    try:
+        if w3 is None:
+            w3 = get_w3()
+        contract = get_savings_contract_at(w3, contract_address)
         addr = Web3.to_checksum_address(wallet_address)
         raw_slots = contract.functions.getUserActiveSlots(addr).call()
         return _normalize_active_slots(raw_slots)
     except Exception as e:
-        logger.error(f"get_user_deposits error: {e}")
+        logger.error(f"get_user_deposits_at({contract_address}) error: {e}")
         return []
+
+
+def get_user_legacy_v5_deposits(wallet_address):
+    """Return active slots from the frozen v5 contract."""
+    return get_user_deposits_at(wallet_address, LEGACY_V5_CONTRACT_ADDRESS)
 
 
 def _history_cache_get(wallet_address):
@@ -690,4 +714,3 @@ def get_user_token_balances(wallet_address):
     except Exception as e:
         logger.error(f"get_user_token_balances error: {e}")
         return {}
-
