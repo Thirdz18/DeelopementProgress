@@ -46,6 +46,41 @@ class ReloadlyClient:
         else:
             logger.warning("⚠️ Reloadly credentials not configured")
 
+    def _fallback_countries(self) -> list:
+        """Return a public country list when Reloadly is unavailable."""
+        countries_resp = requests.get(
+            "https://unpkg.com/countries-list@3.1.1/countries.min.json",
+            timeout=15,
+        )
+        countries_resp.raise_for_status()
+        countries_data = countries_resp.json()
+
+        emoji_resp = requests.get(
+            "https://unpkg.com/countries-list@3.1.1/minimal/countries.emoji.min.json",
+            timeout=15,
+        )
+        emoji_resp.raise_for_status()
+        emoji_data = emoji_resp.json()
+
+        countries = []
+        for iso, item in countries_data.items():
+            iso = (iso or "").strip().upper()
+            name = (item.get("name") or "").strip()
+            phone = item.get("phone") or []
+            calling_codes = [f"+{code}" for code in phone if code]
+            flag = f"https://flagcdn.com/w80/{iso.lower()}.png" if iso else None
+            if iso and name:
+                countries.append({
+                    "isoName": iso,
+                    "name": name,
+                    "callingCodes": calling_codes,
+                    "flag": flag,
+                    "emoji": emoji_data.get(iso),
+                })
+        countries.sort(key=lambda c: c["name"].lower())
+        logger.warning("⚠ Using public country fallback because Reloadly is unavailable")
+        return countries
+
     def _get_token(self, audience: str) -> str:
         """Get OAuth2 access token for the given audience"""
         try:
@@ -328,13 +363,39 @@ class ReloadlyClient:
     def get_countries(self) -> list:
         """Get list of supported countries for top-ups"""
         try:
+            if not self.is_initialized:
+                return self._fallback_countries()
             url = f"{self.topup_url}/countries"
             resp = requests.get(url, headers=self._topup_headers(), timeout=15)
             resp.raise_for_status()
-            return resp.json()
+            data = resp.json()
+            if isinstance(data, dict):
+                data = data.get("content", data.get("countries", data))
+            if not isinstance(data, list):
+                raise ValueError("Unexpected countries response")
+            countries = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                iso = (item.get("isoName") or item.get("iso") or item.get("countryCode") or "").strip().upper()
+                name = (item.get("name") or item.get("countryName") or "").strip()
+                calling_codes = item.get("callingCodes") or item.get("dialingCodes") or []
+                if isinstance(calling_codes, str):
+                    calling_codes = [calling_codes]
+                countries.append({
+                    "isoName": iso,
+                    "name": name,
+                    "callingCodes": calling_codes,
+                    "flag": item.get("flag") or item.get("flagUrl"),
+                })
+            countries = [c for c in countries if c["isoName"] and c["name"]]
+            countries.sort(key=lambda c: c["name"].lower())
+            return countries
         except Exception as e:
-            logger.error(f"❌ get_countries error: {e}")
-            raise
-
+            logger.error(f"❌get_countries error: {e}")
+            try:
+                return self._fallback_countries()
+            except Exception:
+                raise
 
 reloadly_client = ReloadlyClient()
