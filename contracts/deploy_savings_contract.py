@@ -189,7 +189,7 @@ def deploy_contract():
 
         deployment_info = {
             "contract_name": "GDSavings",
-            "version": "5",
+            "version": "6",
             "contract_address": contract_address,
             "tx_hash": tx_hash_hex,
             "deployer": account.address,
