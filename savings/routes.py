@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 savings_bp = Blueprint("savings", __name__, url_prefix="/savings")
 
 SAVINGS_CONTRACT_ADDRESS = os.getenv('SAVINGS_CONTRACT_ADDRESS', '')
+LEGACY_V5_CONTRACT_ADDRESS = os.getenv('LEGACY_V5_CONTRACT_ADDRESS', '')
 GD_TOKEN_ADDRESS = os.getenv('GOODDOLLAR_CONTRACT_ADDRESS', '0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A')
 CELO_TOKEN_ADDRESS = os.getenv('CELO_TOKEN_ADDRESS', '0x471EcE3750Da237f93B8E339c536989b8978a438')
 CUSD_TOKEN_ADDRESS = os.getenv('CUSD_TOKEN_ADDRESS', '0x765DE816845861e75A25fCA122bb6898B8B1282a')
@@ -34,6 +35,7 @@ def savings_home():
         "savings.html",
         wallet=wallet,
         savings_contract=SAVINGS_CONTRACT_ADDRESS,
+        legacy_v5_contract=LEGACY_V5_CONTRACT_ADDRESS,
         gd_contract=GD_TOKEN_ADDRESS,
         celo_contract=CELO_TOKEN_ADDRESS,
         cusd_contract=CUSD_TOKEN_ADDRESS,
@@ -101,3 +103,15 @@ def api_token_allowance():
         return jsonify({"error": "Missing token query parameter"}), 400
     return jsonify({"allowance": str(svc.get_token_allowance(wallet, token))})
 
+
+@savings_bp.route("/api/legacy-v5-deposits")
+def api_legacy_v5_deposits():
+    """Read-only list of v5 deposits for the connected wallet."""
+    wallet, verified = _require_auth()
+    if not wallet or not verified:
+        return jsonify({"error": "Unauthorized"}), 401
+    deposits = svc.get_user_legacy_v5_deposits(wallet)
+    return jsonify({
+        "contract": LEGACY_V5_CONTRACT_ADDRESS,
+        "deposits": deposits,
+    })

@@ -270,6 +270,8 @@ The script writes the new contract address + ABI to
 `contracts/savings_deployment_info.json`. After a successful deploy:
 
 1. Update `SAVINGS_CONTRACT_ADDRESS` in the deployment environment.
+   If you are keeping the previous v5 vault withdrawable while v6 is live,
+   set `LEGACY_V5_CONTRACT_ADDRESS` to the old v5 address.
 2. Set `USDT_TOKEN_ADDRESS` to match the address used at deploy time
    (defaults match the script).
 3. If the new deploy block differs from the previous value (65917286),
