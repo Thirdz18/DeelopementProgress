@@ -3882,6 +3882,7 @@
             var btn = document.getElementById('musicToggleBtn');
             var label = document.getElementById('musicLabel');
             var hint = document.getElementById('musicHint');
+            var musicPlayer = document.getElementById('musicPlayer');
 
             if (ytPlayer && ytPlayer.mute) {
                 ytPlayer.mute();
@@ -3892,6 +3893,7 @@
             btn.classList.remove('waiting');
             btn.innerHTML = '🔇';
             btn.style.boxShadow = '0 4px 20px rgba(124,58,237,0.7)';
+            musicPlayer.style.display = 'flex';
             label.style.display = 'block';
             hint.style.display = 'none';
 
