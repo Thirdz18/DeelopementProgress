@@ -26,9 +26,8 @@ Features:
   - No owner, no admin, no pause, no emergency, no early withdrawal.
 
 Before re-deploying:
-  - Old (v4) deployment info is preserved at
-    contracts/savings_deployment_info_v4.json so the frontend can still
-    read+withdraw legacy v4 deposits.
+  - Update the frontend/backend to point at the new savings contract
+    address before switching users over to the new deploy.
 """
 
 import os

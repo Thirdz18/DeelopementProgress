@@ -362,10 +362,8 @@
             </div>
         </div>
 
-        <!-- Withdrawn history panel — collapsible like the legacy card. Only
-             shown for wallets that have at least one withdrawn save on the
-             v4 contract. Source of truth is on-chain Withdrawn events, not
-             localStorage. -->
+        <!-- Withdrawn history panel — collapsible and built from on-chain
+             events. Source of truth is the current contract, not localStorage. -->
         <div class="card" id="withdrawnCard" style="display:none; margin-top:1.25rem; border-color:rgba(148,163,184,.22); background:rgba(148,163,184,.04);">
             <button type="button"
                     id="withdrawnToggle"
@@ -388,61 +386,6 @@
             </div>
         </div>
 
-        <!-- Legacy v4 panel — only rendered for wallets that have active v4
-             slots on the pre-v5 multi-token contract. Read + withdraw only;
-             v5 active slots are the only thing that ever accepts new deposits. -->
-        <div class="card" id="legacyV4Card" style="display:none; margin-top:1.25rem; border-color:rgba(94,234,212,.35); background:rgba(94,234,212,.05);">
-            <button type="button"
-                    id="legacyV4Toggle"
-                    onclick="toggleLegacyV4()"
-                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
-                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
-                    🗄️ Legacy Saves
-                    <span id="legacyV4Count" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(94,234,212,.18); color:#5eead4; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
-                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(94,234,212,.16); color:#5eead4; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">v4 · READ-ONLY</span>
-                </span>
-                <span id="legacyV4Chevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▴</span>
-            </button>
-            <div id="legacyV4Body" style="display:block; margin-top:.95rem;">
-                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
-                    Saves you opened on the previous multi-token savings contract
-                    (<code style="color:#5eead4; font-size:.7rem;">{{ legacy_v4_contract }}</code>).
-                    These are <strong>withdraw-only</strong> on this UI — new deposits and top-ups always go to the current v5 contract above.
-                    Once every v4 slot has been withdrawn, this section disappears.
-                </p>
-                <div id="legacyV4Alert" class="alert"></div>
-                <div id="legacyV4List" class="dep-list">
-                    <div class="empty-state">Loading legacy v4 saves…</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Legacy v2 panel — only rendered for wallets that have v2 deposits. -->
-        <div class="card" id="legacyCard" style="display:none; margin-top:1.25rem; border-color:rgba(251,191,36,.35); background:rgba(251,191,36,.05);">
-            <button type="button"
-                    id="legacyToggle"
-                    onclick="toggleLegacy()"
-                    style="width:100%; background:transparent; border:none; padding:0; cursor:pointer; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:.75rem;">
-                <span style="font-size:1.05rem; font-weight:600; color:#f5f5f7;">
-                    🗂️ Legacy Saves
-                    <span id="legacyCount" style="display:inline-block; margin-left:.4rem; padding:.05rem .5rem; background:rgba(167,139,250,.18); color:#c4b5fd; border-radius:999px; font-size:.7rem; font-weight:600;">0</span>
-                    <span style="display:inline-block; margin-left:.35rem; padding:.05rem .45rem; background:rgba(255,180,80,.16); color:#fbbf24; border-radius:6px; font-size:.62rem; font-weight:700; letter-spacing:.04em; vertical-align:middle;">v2 · READ-ONLY</span>
-                </span>
-                <span id="legacyChevron" style="color:rgba(255,255,255,.45); font-size:.9rem;">▴</span>
-            </button>
-            <div id="legacyBody" style="display:block; margin-top:.95rem;">
-                <p style="font-size:.74rem; color:rgba(255,255,255,.45); margin-bottom:.7rem;">
-                    Saves you opened on the previous savings contract
-                    (<code style="color:#a78bfa; font-size:.7rem;">{{ legacy_v2_contract }}</code>).
-                    These are <strong>withdraw-only</strong> — top-ups always go to your active slots above.
-                    Once all of these are withdrawn, this section disappears.
-                </p>
-                <div id="legacyAlert" class="alert"></div>
-                <div id="legacyList" class="dep-list">
-                    <div class="empty-state">Loading legacy saves…</div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- ── TAB: SPONSOR POOL ── -->
@@ -635,38 +578,12 @@
     // lower bound for the on-chain history reconstruction so we never miss a
     // Saved or Withdrawn event. Bumped to v5 deploy block after redeploy.
     const SAVINGS_DEPLOYMENT_BLOCK = 65917286;
-    // Block height where the legacy v2 contract was deployed on Celo
-    // Mainnet (verified via binary search on `eth_getCode`). Used as the
-    // lower bound when reading the legacy contract's `Withdrawn` events.
-    const LEGACY_DEPLOYMENT_BLOCK = 63927388;
-
     const ERC20_ABI = [
         "function balanceOf(address owner) view returns (uint256)",
         "function allowance(address owner, address spender) view returns (uint256)",
         "function approve(address spender, uint256 amount) returns (bool)",
     ];
 
-    // ── Legacy v2 contract (frozen, read + withdraw only) ──
-    const LEGACY_V2_CONTRACT = "{{ legacy_v2_contract }}";
-    const LEGACY_V2_ABI = [
-        "function getUserDepositIds(address user) view returns (uint256[])",
-        "function getDeposit(uint256 id) view returns (address,uint256,uint256,uint256,uint256,bool,bool,bool,bool,uint256)",
-        "function withdraw(uint256 depositId) external",
-        // Used to recover the on-chain tx hash for already-withdrawn legacy
-        // deposits so the UI can still show a CeloScan link for auditability,
-        // even on a fresh device with no local history.
-        "event Withdrawn(address indexed user, uint256 indexed depositId, uint256 amount, uint256 timestamp)",
-    ];
-
-    // ── Legacy v4 multi-token contract (frozen after v5 redeploy) ──
-    // Same slot model as v5, but with a fixed 13-step duration ladder and
-    // no USDT support. Read-only here: top-ups go to v5 active slots; v4
-    // slots can only be `withdraw(token, lockDays)`-ed once they unlock.
-    const LEGACY_V4_CONTRACT = "{{ legacy_v4_contract }}";
-    const LEGACY_V4_ABI = [
-        "function withdraw(address token, uint256 lockDays) external",
-        "function getUserActiveSlots(address user) view returns (address[] tokens, uint256[] lockDays_, uint256[] amounts, uint256[] unlocksAts, bool[] areUnlocked, bool[] bonusClaimed, uint256[] pendingBonuses)",
-    ];
 
     // Per-token configuration. USDT is 6-decimal on Celo (bridged Tether);
     // every other token is 18-decimal. Min/max are *human* units — the
@@ -704,10 +621,7 @@
     }
 
     // Return token metadata for a given on-chain address. Falls back to a
-    // minimal record when the deposit was made in a token we no longer
-    // surface in the UI (defensive — the contract only allows the four
-    // canonical tokens, but legacy v4 slots may surface in a slightly
-    // different order via getUserActiveSlots).
+    // minimal record when the address is not one of the supported tokens.
     function tokenMetaForAddress(tokenAddr) {
         const lc = String(tokenAddr || '').toLowerCase();
         for (const t of Object.values(TOKENS)) {
@@ -744,7 +658,7 @@
         return out;
     }
 
-    // Reconstruct full v4 savings history for a wallet directly from
+    // Reconstruct full savings history for a wallet directly from
     // Saved + Withdrawn events. Returns an array of normalized slot
     // records covering every cycle the wallet has ever opened (active
     // and already-withdrawn alike), so the UI no longer depends on
@@ -856,35 +770,6 @@
             active.push(cycle);
         }
         return [...active, ...closed];
-    }
-
-    // Look up tx hashes for a wallet's already-withdrawn legacy v2 deposits
-    // by replaying the legacy contract's `Withdrawn` event. Returns a map
-    // of depositId (number) -> tx hash. Best-effort: if the RPC errors out,
-    // the UI falls back to a generic CeloScan link to the legacy contract.
-    async function loadLegacyWithdrawnTxMap(walletAddress) {
-        if (!walletAddress || !LEGACY_V2_CONTRACT) return {};
-        try {
-            const provider = getReadProvider();
-            const contract = new ethers.Contract(LEGACY_V2_CONTRACT, LEGACY_V2_ABI, provider);
-            const latest = await provider.getBlockNumber();
-            const logs = await queryFilterChunked(
-                contract,
-                contract.filters.Withdrawn(walletAddress),
-                LEGACY_DEPLOYMENT_BLOCK,
-                latest,
-                1_000_000
-            );
-            const byId = {};
-            for (const log of logs) {
-                const id = Number(log.args?.depositId ?? log.args?.[1]);
-                if (Number.isFinite(id)) byId[id] = log.transactionHash;
-            }
-            return byId;
-        } catch (e) {
-            console.warn('legacy Withdrawn event scan failed:', e);
-            return {};
-        }
     }
 
     // ── Tabs ──
@@ -1784,13 +1669,8 @@
     // withdraw transaction. No localStorage involved, so the same wallet
     // shows the same history on any browser or device.
     async function loadDeposits() {
-        // Kick off both legacy panel loads immediately, in parallel with the
-        // v5 fetch below. They must run regardless of v5 outcome — including
-        // when a wallet has no v5 saves yet, when /api/deposits errors, or
-        // when the v5 path early-returns — otherwise users with only legacy
-        // history can never see their old deposits in the UX.
-        loadLegacyDeposits();
-        loadLegacyV4Deposits();
+        // Load the current contract state immediately, in parallel with the
+        // history fetch below.
 
         const container = document.getElementById('depList');
         container.innerHTML = '<div class="empty-state">Loading…</div>';
@@ -2036,303 +1916,6 @@
         return el;
     }
 
-    // ── Legacy v2 panel (frozen previous contract — read + withdraw only) ──
-    function toggleLegacy() {
-        const body = document.getElementById('legacyBody');
-        const chev = document.getElementById('legacyChevron');
-        const open = body.style.display === 'block';
-        body.style.display = open ? 'none' : 'block';
-        chev.textContent   = open ? '▾' : '▴';
-    }
-
-    async function loadLegacyDeposits() {
-        const card      = document.getElementById('legacyCard');
-        const body      = document.getElementById('legacyBody');
-        const chev      = document.getElementById('legacyChevron');
-        const list      = document.getElementById('legacyList');
-        const countEl   = document.getElementById('legacyCount');
-        try {
-            // In parallel: fetch the v2 deposit state from the backend AND
-            // recover withdraw tx hashes from the legacy contract's
-            // `Withdrawn` events so the UI can show CeloScan links for
-            // already-withdrawn legacy rows on any device.
-            const [data, legacyTxByDepositId] = await Promise.all([
-                fetch('/savings/api/legacy-deposits').then(r => r.json()),
-                loadLegacyWithdrawnTxMap(WALLET),
-            ]);
-            const deps = data.deposits || [];
-            // Hide the panel entirely for the 99% of users with no v2 history.
-            if (deps.length === 0) {
-                card.style.display = 'none';
-                return;
-            }
-            for (const d of deps) {
-                if (d.withdrawn && legacyTxByDepositId[d.id]) {
-                    d.withdraw_tx_hash = legacyTxByDepositId[d.id];
-                }
-            }
-            const pending = deps.filter(d => !d.withdrawn);
-            countEl.textContent = pending.length > 0
-                ? `${pending.length} pending`
-                : `${deps.length} (all withdrawn)`;
-            list.innerHTML = '';
-            // Pending first, withdrawn at the bottom.
-            for (const d of [...pending, ...deps.filter(d => d.withdrawn)]) {
-                list.appendChild(buildLegacyCard(d));
-            }
-            card.style.display = 'block';
-            // Auto-expand the body when there is at least one pending deposit
-            // so users with active legacy saves see them without an extra click.
-            // Collapse only when every legacy deposit has already been withdrawn.
-            if (pending.length > 0) {
-                body.style.display = 'block';
-                chev.textContent   = '\u25B4';
-            } else {
-                body.style.display = 'none';
-                chev.textContent   = '\u25BE';
-            }
-        } catch (e) {
-            console.warn('Legacy load failed', e);
-            card.style.display = 'none';
-        }
-    }
-
-    function buildLegacyCard(d) {
-        const el = document.createElement('div');
-        const ready = d.is_unlocked && !d.withdrawn;
-        el.className = 'dep-card' + (ready ? ' unlocked' : (d.withdrawn ? ' withdrawn' : ''));
-
-        const unlock = new Date(d.unlocks_at * 1000);
-
-        let statusBadge;
-        if (d.withdrawn) {
-            statusBadge = '<span class="dep-badge badge-done">✓ Withdrawn</span>';
-        } else if (d.is_unlocked) {
-            statusBadge = '<span class="dep-badge badge-ready">Ready to Withdraw</span>';
-        } else {
-            statusBadge = '<span class="dep-badge badge-locked">Locked</span>';
-        }
-
-        let bonusBadge = '';
-        if (!d.withdrawn && d.bonus_claimed) {
-            bonusBadge = '<span class="dep-badge badge-bonus">🎁 Bonus Claimed</span>';
-        } else if (!d.withdrawn && d.pending_bonus_gd > 0) {
-            bonusBadge = `<span class="dep-badge badge-bonus">🎁 +${fmtAmt(d.pending_bonus_gd, 'G$')} bonus on withdrawal</span>`;
-        }
-
-        const withdrawBtn = ready
-            ? `<button class="btn btn-green" onclick="doLegacyWithdraw(${d.id})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw (v2)</button>`
-            : '';
-
-        // CeloScan link for already-withdrawn rows. Prefer the actual tx hash
-        // recovered from the legacy `Withdrawn` event; fall back to the
-        // contract's address page so the audit trail is at least one click
-        // away even if the event scan didn't return.
-        let txRow = '';
-        if (d.withdrawn) {
-            const txLink = d.withdraw_tx_hash
-                ? `<a href="https://celoscan.io/tx/${d.withdraw_tx_hash}" target="_blank" rel="noopener" style="color:#86efac; font-weight:600;">View tx ↗</a>`
-                : `<a href="https://celoscan.io/address/${LEGACY_V2_CONTRACT}" target="_blank" rel="noopener" style="color:#86efac; font-weight:600;">View on CeloScan ↗</a>`;
-            txRow = `<div class="row">Tx: <span>${txLink}</span></div>`;
-        }
-
-        el.innerHTML = `
-            <div class="dep-amount">${fmtAmt(d.amount_gd, 'G$')}</div>
-            <div class="dep-meta">
-                <div class="row">Deposit ID: <span>#${d.id}</span></div>
-                <div class="row">Lock: <span>${d.lock_days} days</span></div>
-                <div class="row">Unlocks: <span>${unlock.toDateString()}</span></div>
-                ${txRow}
-            </div>
-            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
-                ${statusBadge}${bonusBadge}
-            </div>
-            ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
-        `;
-        return el;
-    }
-
-    async function doLegacyWithdraw(depositId) {
-        try {
-            // Server-side signing was never wired up for v2; require the user's wallet.
-            if (window.useServerSigning) {
-                throw new Error('Legacy withdrawal must be signed with your own wallet.');
-            }
-
-            const fn   = "function withdraw(uint256 depositId) external";
-            const args = [BigInt(depositId)];
-
-            if (_isMiniPay()) {
-                showAlert('legacyAlert', 'info', '<span class="spinner"></span> Confirm legacy withdrawal in MiniPay…');
-                const txHash = await _miniPayTx(LEGACY_V2_CONTRACT, fn, args);
-                showAlert('legacyAlert', 'success',
-                    `✅ Legacy save withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-                );
-                loadLegacyDeposits();
-                return;
-            }
-
-            const signer = await getSigner();
-            await ensureCeloNetwork();
-            const legacy = new ethers.Contract(LEGACY_V2_CONTRACT, LEGACY_V2_ABI, signer);
-
-            showAlert('legacyAlert', 'info', '<span class="spinner"></span> Confirm legacy withdrawal in your wallet…');
-            const tx = await legacy.withdraw(BigInt(depositId));
-            showAlert('legacyAlert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
-            const receipt = await tx.wait();
-
-            showAlert('legacyAlert', 'success',
-                `✅ Legacy save withdrawn! <a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-            );
-            loadLegacyDeposits();
-        } catch (err) {
-            console.error(err);
-            if (err._miniPayDiag) {
-                const d = err._miniPayDiag;
-                showAlert('legacyAlert', 'error',
-                    `❌ MiniPay legacy withdrawal failed<br>` +
-                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small>`);
-            } else {
-                const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err.reason || err.message || 'Unknown error');
-                showAlert('legacyAlert', 'error', '❌ Legacy withdrawal failed: ' + friendly);
-            }
-        }
-    }
-
-    // ── Legacy v4 panel (pre-v5 multi-token contract — read + withdraw only) ──
-    function toggleLegacyV4() {
-        const body = document.getElementById('legacyV4Body');
-        const chev = document.getElementById('legacyV4Chevron');
-        const open = body.style.display === 'block';
-        body.style.display = open ? 'none' : 'block';
-        chev.textContent   = open ? '▾' : '▴';
-    }
-
-    async function loadLegacyV4Deposits() {
-        const card    = document.getElementById('legacyV4Card');
-        const body    = document.getElementById('legacyV4Body');
-        const chev    = document.getElementById('legacyV4Chevron');
-        const list    = document.getElementById('legacyV4List');
-        const countEl = document.getElementById('legacyV4Count');
-        try {
-            const data = await fetch('/savings/api/legacy-v4-deposits').then(r => r.json());
-            const deps = data.deposits || [];
-            // Hide the panel entirely for wallets with no v4 history.
-            if (deps.length === 0) {
-                card.style.display = 'none';
-                return;
-            }
-            const ready = deps.filter(d => d.is_unlocked);
-            countEl.textContent = ready.length > 0
-                ? `${ready.length} ready · ${deps.length} total`
-                : `${deps.length} locked`;
-            list.innerHTML = '';
-            // Ready-to-withdraw first, still-locked below.
-            const ordered = [...ready, ...deps.filter(d => !d.is_unlocked)];
-            for (const d of ordered) {
-                list.appendChild(buildLegacyV4Card(d));
-            }
-            card.style.display = 'block';
-            // Auto-expand the body when at least one v4 slot is ready to withdraw.
-            if (ready.length > 0) {
-                body.style.display = 'block';
-                chev.textContent   = '▴';
-            } else {
-                body.style.display = 'none';
-                chev.textContent   = '▾';
-            }
-        } catch (e) {
-            console.warn('Legacy v4 load failed', e);
-            card.style.display = 'none';
-        }
-    }
-
-    function buildLegacyV4Card(d) {
-        const sym = d.token_symbol || '?';
-        const el = document.createElement('div');
-        const ready = Boolean(d.is_unlocked);
-        el.className = 'dep-card' + (ready ? ' unlocked' : '');
-
-        const unlock = new Date((d.unlocks_at || 0) * 1000);
-
-        let statusBadge;
-        if (ready) {
-            statusBadge = '<span class="dep-badge badge-ready">Ready to Withdraw</span>';
-        } else {
-            statusBadge = '<span class="dep-badge badge-locked">Locked</span>';
-        }
-
-        let bonusBadge = '';
-        if (d.bonus_claimed) {
-            bonusBadge = '<span class="dep-badge badge-bonus">🎁 Bonus Claimed</span>';
-        } else if (Number(d.pending_bonus_gd) > 0) {
-            bonusBadge = `<span class="dep-badge badge-bonus">🎁 +${fmtAmt(d.pending_bonus_gd, 'G$')} bonus on withdrawal</span>`;
-        }
-
-        const withdrawBtn = ready
-            ? `<button class="btn btn-green" onclick="doLegacyV4Withdraw('${d.token}', ${d.lock_days})" style="font-size:.8rem; padding:.5rem 1rem;">Withdraw (v4)</button>`
-            : '';
-
-        el.innerHTML = `
-            <div class="dep-amount">${fmtAmt(d.amount_h, sym)}</div>
-            <div class="dep-meta">
-                <div class="row">Token: <span>${sym}</span></div>
-                <div class="row">Lock: <span>${d.lock_days} days</span></div>
-                <div class="row">Unlocks: <span>${unlock.toDateString()}</span></div>
-            </div>
-            <div style="display:flex; gap:.4rem; flex-wrap:wrap; align-items:center;">
-                ${statusBadge}${bonusBadge}
-            </div>
-            ${withdrawBtn ? `<div>${withdrawBtn}</div>` : ''}
-        `;
-        return el;
-    }
-
-    async function doLegacyV4Withdraw(tokenAddr, lockDays) {
-        try {
-            if (window.useServerSigning) {
-                throw new Error('Legacy v4 withdrawal must be signed with your own wallet.');
-            }
-
-            const fn   = "function withdraw(address token, uint256 lockDays) external";
-            const args = [tokenAddr, BigInt(lockDays)];
-
-            if (_isMiniPay()) {
-                showAlert('legacyV4Alert', 'info', '<span class="spinner"></span> Confirm v4 withdrawal in MiniPay…');
-                const txHash = await _miniPayTx(LEGACY_V4_CONTRACT, fn, args);
-                showAlert('legacyV4Alert', 'success',
-                    `✅ Legacy v4 save withdrawn! <a href="https://celoscan.io/tx/${txHash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-                );
-                loadLegacyV4Deposits();
-                return;
-            }
-
-            const signer = await getSigner();
-            await ensureCeloNetwork();
-            const legacy = new ethers.Contract(LEGACY_V4_CONTRACT, LEGACY_V4_ABI, signer);
-
-            showAlert('legacyV4Alert', 'info', '<span class="spinner"></span> Confirm v4 withdrawal in your wallet…');
-            const tx = await legacy.withdraw(tokenAddr, BigInt(lockDays));
-            showAlert('legacyV4Alert', 'info', '<span class="spinner"></span> Waiting for Celo confirmation…');
-            const receipt = await tx.wait();
-
-            showAlert('legacyV4Alert', 'success',
-                `✅ Legacy v4 save withdrawn! <a href="https://celoscan.io/tx/${receipt.hash}" target="_blank" style="color:#86efac;">View on CeloScan ↗</a>`
-            );
-            loadLegacyV4Deposits();
-        } catch (err) {
-            console.error(err);
-            if (err._miniPayDiag) {
-                const d = err._miniPayDiag;
-                showAlert('legacyV4Alert', 'error',
-                    `❌ MiniPay v4 withdrawal failed<br>` +
-                    `<small style="opacity:.75">Step: ${d.fn} → ${d.to.slice(0,10)}…</small>`);
-            } else {
-                const friendly = (window.GMTxError && GMTxError.format) ? GMTxError.format(err) : (err.reason || err.message || 'Unknown error');
-                showAlert('legacyV4Alert', 'error', '❌ Legacy v4 withdrawal failed: ' + friendly);
-            }
-        }
-    }
 
     // ── Utilities ──
     function fmtAmt(n, sym) {
