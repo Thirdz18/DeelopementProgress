@@ -11,6 +11,7 @@ import subprocess
 import sys
 import json
 import base64 as _b64
+import requests
 
 from reloadly import init_reloadly
 from savings import init_savings
@@ -199,6 +200,7 @@ _CSP_DIRECTIVES = (
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
     "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com "
     "https://esm.sh "
+    "https://accounts.google.com "
     "https://telegram.org https://*.telegram.org",
     "style-src 'self' 'unsafe-inline' "
     "https://fonts.googleapis.com https://cdnjs.cloudflare.com",
@@ -1890,6 +1892,7 @@ def turnkey_google_login():
         session['verified'] = True
         session['ubi_verified'] = True
         session['login_method'] = 'turnkey_google'
+        session['turnkey_organization_id'] = sub_org_id
         session['google_email'] = email
         session['verification_time'] = datetime.now().isoformat()
 
@@ -1935,6 +1938,238 @@ def turnkey_google_login():
     except Exception as e:
         logger.error(f"❌ Turnkey Google login error: {e}")
         return jsonify({'success': False, 'error': 'Login failed'}), 500
+
+
+@app.route('/api/turnkey/auth-session', methods=['POST'])
+def turnkey_auth_session():
+    """Bind a Turnkey Auth Proxy session to the Flask session."""
+    try:
+        data = request.get_json(silent=True) or {}
+        session_token = (data.get('session_token') or '').strip()
+        login_method = (data.get('login_method') or 'turnkey_email').strip() or 'turnkey_email'
+        email = (data.get('email') or '').strip()
+        user_name = (data.get('user_name') or email or '').strip()
+        referral_code = (data.get('referral_code') or '').strip()
+
+        if not session_token:
+            return jsonify({'success': False, 'error': 'Missing session token'}), 400
+
+        import jwt
+        try:
+            payload = jwt.decode(session_token, options={"verify_signature": False, "verify_aud": False})
+        except Exception as exc:
+            return jsonify({'success': False, 'error': f'Invalid session token: {exc}'}), 400
+
+        org_id = (
+            payload.get('organizationId')
+            or payload.get('organization_id')
+            or payload.get('organizationID')
+            or payload.get('orgId')
+            or payload.get('org_id')
+            or ''
+        )
+        if not org_id:
+            return jsonify({'success': False, 'error': 'Session token missing organization id'}), 400
+
+        from turnkey_service import get_wallets_for_sub_org
+        wallets = get_wallets_for_sub_org(org_id)
+        if not wallets:
+            return jsonify({'success': False, 'error': 'No wallets found for this Turnkey session'}), 404
+
+        wallet_record = wallets[0] or {}
+        wallet_address = ''
+        addresses = wallet_record.get('addresses') or []
+        if isinstance(addresses, list) and addresses:
+            first_address = addresses[0]
+            if isinstance(first_address, dict):
+                wallet_address = first_address.get('address') or first_address.get('walletAddress') or ''
+            elif isinstance(first_address, str):
+                wallet_address = first_address
+        if not wallet_address:
+            wallet_address = wallet_record.get('address') or wallet_record.get('walletAddress') or ''
+        if not wallet_address:
+            return jsonify({'success': False, 'error': 'Turnkey wallet address not found'}), 404
+
+        session.permanent = True
+        session['wallet'] = wallet_address
+        session['wallet_address'] = wallet_address
+        session['verified'] = True
+        session['ubi_verified'] = True
+        session['login_method'] = login_method
+        session['turnkey_organization_id'] = org_id
+        if email:
+            session['turnkey_email'] = email
+        session['verification_time'] = datetime.now().isoformat()
+
+        analytics.track_verification_attempt(wallet_address, True)
+
+        response = {
+            'success': True,
+            'message': 'Turnkey session bound successfully',
+            'wallet': wallet_address,
+            'redirect_to': '/wallet',
+        }
+        if referral_code:
+            response['referral_code'] = referral_code
+        if user_name:
+            response['user_name'] = user_name
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"❌ Turnkey auth session error: {e}")
+        return jsonify({'success': False, 'error': 'Session binding failed'}), 500
+
+
+@app.route('/api/turnkey/auth-proxy/<path:subpath>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+def turnkey_auth_proxy(subpath):
+    """Proxy Turnkey Auth Proxy requests to avoid browser CORS issues."""
+    try:
+        upstream_url = f"https://authproxy.turnkey.com/{subpath}"
+        headers = {
+            'Accept': request.headers.get('Accept', 'application/json'),
+            'Content-Type': request.headers.get('Content-Type', 'application/json'),
+            'X-Auth-Proxy-Config-ID': request.headers.get('X-Auth-Proxy-Config-ID', os.environ.get('TURNKEY_AUTH_PROXY_CONFIG_ID', '')),
+        }
+        body = request.get_data() if request.method not in ('GET', 'OPTIONS') else None
+        upstream = requests.request(
+            method=request.method,
+            url=upstream_url,
+            headers=headers,
+            data=body,
+            timeout=60,
+        )
+        try:
+            payload = upstream.json()
+        except Exception:
+            payload = {'raw': upstream.text}
+        resp = jsonify(payload)
+        resp.status_code = upstream.status_code
+        return resp
+    except Exception as e:
+        logger.error(f"❌ Turnkey auth proxy error: {e}")
+        return jsonify({'success': False, 'error': 'Auth proxy request failed'}), 500
+
+
+@app.route('/api/server/sign-tx', methods=['POST'])
+def server_sign_tx():
+    """Sign and optionally broadcast an EVM transaction for Turnkey users."""
+    try:
+        login_method = (session.get('login_method') or '').lower()
+        if not login_method.startswith('turnkey'):
+            return jsonify({'success': False, 'error': 'Server signing is available only for Turnkey sessions'}), 403
+
+        data = request.get_json(silent=True) or {}
+        from_addr = (session.get('wallet') or session.get('wallet_address') or '').strip()
+        turnkey_org_id = (session.get('turnkey_organization_id') or '').strip()
+        to_addr = (data.get('to') or '').strip()
+        call_data = (data.get('data') or '0x').strip()
+        wait_receipt = bool(data.get('wait_receipt'))
+        chain_id_raw = data.get('chain_id', 42220)
+        gas_limit_raw = data.get('gas') or data.get('gas_limit') or data.get('gasLimit')
+        gas_price_raw = data.get('gas_price') or data.get('gasPrice')
+        value_raw = data.get('value', '0x0')
+
+        if not from_addr:
+            return jsonify({'success': False, 'error': 'Missing Turnkey wallet address in session'}), 400
+        if not turnkey_org_id:
+            return jsonify({'success': False, 'error': 'Missing Turnkey organization id in session'}), 400
+        if not to_addr:
+            return jsonify({'success': False, 'error': 'Missing transaction destination'}), 400
+
+        try:
+            chain_id = int(chain_id_raw)
+        except Exception:
+            return jsonify({'success': False, 'error': 'Invalid chain id'}), 400
+
+        def _coerce_int(value, default=0):
+            if value is None or value == '':
+                return default
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                value = value.strip()
+                if value.startswith('0x'):
+                    return int(value, 16)
+                return int(value)
+            return int(value)
+
+        def _rpc_url_for_chain(chain):
+            if chain == 50:
+                return os.getenv('XDC_RPC_URL', 'https://rpc.xinfin.network')
+            return os.getenv('CELO_RPC_URL', CELO_RPC_URL)
+
+        rpc_url = _rpc_url_for_chain(chain_id)
+        w3_local = Web3(Web3.HTTPProvider(rpc_url))
+        if not w3_local.is_connected():
+            return jsonify({'success': False, 'error': f'RPC connection failed for chain {chain_id}'}), 502
+
+        from eth_account._utils.legacy_transactions import serializable_unsigned_transaction_from_dict
+        from hexbytes import HexBytes
+        import rlp
+
+        checksum_to = Web3.to_checksum_address(to_addr)
+        checksum_from = Web3.to_checksum_address(from_addr)
+        nonce = w3_local.eth.get_transaction_count(checksum_from)
+        gas_price = _coerce_int(gas_price_raw, w3_local.eth.gas_price)
+        value_wei = _coerce_int(value_raw, 0)
+        tx = {
+            'to': checksum_to,
+            'value': value_wei,
+            'data': HexBytes(call_data),
+            'chainId': chain_id,
+            'nonce': nonce,
+            'gasPrice': gas_price,
+        }
+        if gas_limit_raw is not None and gas_limit_raw != '':
+            tx['gas'] = _coerce_int(gas_limit_raw, 0)
+        else:
+            estimate_tx = {
+                'from': checksum_from,
+                'to': checksum_to,
+                'value': value_wei,
+                'data': HexBytes(call_data),
+            }
+            tx['gas'] = max(int(w3_local.eth.estimate_gas(estimate_tx) * 1.2), 21000)
+
+        unsigned_tx = serializable_unsigned_transaction_from_dict(tx)
+        unsigned_tx_hex = '0x' + rlp.encode(unsigned_tx).hex()
+
+        from turnkey_service import _turnkey_post
+        turnkey_body = {
+            'type': 'ACTIVITY_TYPE_SIGN_TRANSACTION_V2',
+            'timestampMs': str(int(time() * 1000)),
+            'organizationId': turnkey_org_id,
+            'parameters': {
+                'signWith': checksum_from,
+                'unsignedTransaction': unsigned_tx_hex,
+                'type': 'TRANSACTION_TYPE_ETHEREUM',
+            },
+        }
+        turnkey_result = _turnkey_post('/public/v1/submit/sign_transaction', turnkey_body)
+        signed_tx_hex = (
+            turnkey_result.get('activity', {})
+            .get('result', {})
+            .get('signTransactionResult', {})
+            .get('signedTransaction', '')
+        )
+        if not signed_tx_hex:
+            return jsonify({'success': False, 'error': 'Turnkey did not return a signed transaction'}), 500
+
+        tx_hash = w3_local.eth.send_raw_transaction(HexBytes(signed_tx_hex))
+        tx_hash_hex = tx_hash.hex()
+
+        response = {
+            'success': True,
+            'tx_hash': tx_hash_hex,
+            'signed_transaction': signed_tx_hex,
+        }
+        if wait_receipt:
+            receipt = w3_local.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+            response['receipt_status'] = int(getattr(receipt, 'status', 0) or 0)
+            response['block_number'] = int(getattr(receipt, 'blockNumber', 0) or 0)
+        return jsonify(response)
+    except Exception as e:
+        logger.error(f"❌ Server sign-tx error: {e}")
+        return jsonify({'success': False, 'error': 'Transaction signing failed'}), 500
 
 
 @app.route('/manual-wallet-login', methods=['POST'])
