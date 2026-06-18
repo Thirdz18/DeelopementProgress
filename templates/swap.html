@@ -795,10 +795,6 @@
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
-    {% if login_method == 'privy' %}
-    <script type="application/json" id="privySignerBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
-    <script type="module" src="{{ url_for('static', filename='js/privy-signer-bridge.js', v=ASSET_VERSION) }}"></script>
-    {% endif %}
     <script>
         if (typeof GMWalletConnect !== "undefined") {
             GMWalletConnect.configure({
@@ -1720,9 +1716,6 @@
         // Handles EIP-5749 multi-wallet: prefer Trust Wallet in Trust mobile;
         // otherwise preserve MetaMask-first behavior.
         function _getEthProvider() {
-            if (typeof LOGIN_METHOD === 'string' && LOGIN_METHOD.toLowerCase() === 'privy' && typeof window.__getPrivyEthereumProvider === 'function') {
-                return window.__privyEthereumProvider || null;
-            }
             try { window.dispatchEvent(new Event('eip6963:requestProvider')); } catch (_) {}
             const providers = _collectSwapProviders();
             if (!providers.length) return null;

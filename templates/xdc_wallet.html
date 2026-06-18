@@ -358,10 +358,6 @@
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
-    {% if login_method == 'privy' %}
-    <script type="application/json" id="privySignerBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
-    <script type="module" src="{{ url_for('static', filename='js/privy-signer-bridge.js', v=ASSET_VERSION) }}"></script>
-    {% endif %}
     <script>
         if (typeof GMWalletConnect !== "undefined") {
             GMWalletConnect.configure({
@@ -765,9 +761,6 @@
         }
 
         function _getEthProvider() {
-            if (typeof LOGIN_METHOD === 'string' && LOGIN_METHOD.toLowerCase() === 'privy' && typeof window.__getPrivyEthereumProvider === 'function') {
-                return window.__privyEthereumProvider || null;
-            }
             // First, check for injected wallets (MetaMask, Trust Wallet, MiniPay, etc.)
             if (window.ethereum) {
                 if (window.ethereum.providers && window.ethereum.providers.length) {

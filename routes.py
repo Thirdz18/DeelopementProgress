@@ -1533,7 +1533,6 @@ def index():
         }
     return render_template(
         "homepage.html",
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         walletconnect_project_id=wc_project_id,
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         homepage_stats=homepage_stats,
@@ -5431,7 +5430,6 @@ def learn_earn_page():
     return render_template("learn_and_earn.html",
                          wallet=wallet,
                          login_method=session.get("login_method", "walletconnect"),
-                         privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
                          walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
                          walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
                          is_admin_user=is_admin_user)
@@ -6538,7 +6536,6 @@ def wallet_page():
         "wallet.html",
         wallet=wallet,
         login_method=session.get("login_method", "walletconnect"),
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         buy_eth_visible=buy_eth_visible,
@@ -6679,7 +6676,6 @@ def swap_page():
         "swap.html",
         wallet=wallet,
         login_method=session.get("login_method", "walletconnect"),
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
         reserve_swap_visible=reserve_visible,
@@ -6864,7 +6860,6 @@ def send_link_page():
         "send-link.html",
         wallet=wallet,
         login_method=session.get("login_method", "walletconnect"),
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
         walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled(),
     )
@@ -6876,8 +6871,7 @@ def claim_page():
     return render_template(
         "claim.html",
         login_method=session.get("login_method", "walletconnect"),
-        wallet=session.get("wallet", ""),
-        privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
+        wallet=session.get("wallet", "")
     )
 
 
@@ -7156,7 +7150,6 @@ def xdc_wallet_page():
                            xdc_bridge_contract=xdc_bridge_contract,
                            xdc_gd_token_contract=xdc_gd_token_contract,
                            celo_chain_id=celo_chain_id,
-                           privy_app_id=os.environ.get("PRIVY_APP_ID", ""),
                            walletconnect_project_id=os.environ.get("WALLETCONNECT_PROJECT_ID", ""),
                            walletconnect_sidecar_enabled=_is_walletconnect_sidecar_enabled())
 
