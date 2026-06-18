@@ -1194,18 +1194,6 @@
             transform: translateY(-2px);
         }
 
-        .wallet-option-card.privy-option {
-            background: linear-gradient(135deg, #7c3aed, #4338ca);
-            border-color: transparent;
-            color: white;
-        }
-
-        .wallet-option-card.privy-option:hover {
-            box-shadow: 0 8px 24px rgba(124, 58, 237, 0.38);
-            border-color: transparent;
-            transform: translateY(-2px);
-        }
-
         .option-icon {
             font-size: 1.5rem;
             flex-shrink: 0;
@@ -1630,8 +1618,6 @@
             });
         }
     </script>
-    <script type="application/json" id="privyHomepageBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
-    <script type="module" src="{{ url_for('static', filename='js/privy-homepage.js', v=ASSET_VERSION) }}"></script>
 </head>
 <body>
     <!-- Header -->
@@ -2138,8 +2124,6 @@
                     <span class="option-arrow">→</span>
                 </button>
             </div>
-
-            <div id="privyWalletRoot"></div>
 
             <!-- Step 2A: WalletConnect / injected -->
             <div class="wallet-form" id="walletConnectOptions">
@@ -2927,7 +2911,7 @@
                 .join('');
         }
 
-        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '', loginMethod = '') {
+        async function postVerifyIdentity(walletAddress, signature, message, referralCode = '') {
             const resp = await fetch('/verify-identity', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2935,8 +2919,7 @@
                     wallet_address: walletAddress,
                     signature,
                     message,
-                    referral_code: referralCode || '',
-                    login_method: loginMethod,
+                    referral_code: referralCode || ''
                 })
             });
             const data = await resp.json();
@@ -3024,7 +3007,7 @@
                 const messageHex = utf8ToHex(message);
                 showWalletStatus('walletConnectStatus', '✍️ Signature request sent. Approve the login message in your wallet.', 'info');
                 const signature = await provider.request({ method: 'personal_sign', params: [messageHex, wallet] });
-                const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode(), 'walletconnect');
+                const verifyData = await postVerifyIdentity(wallet, signature, message, getPendingReferralCode());
                 const okMsg = (verifyData && verifyData.referral_warning)
                     ? ('✅ Signature verified. ⚠️ ' + verifyData.referral_warning + ' Redirecting...')
                     : '✅ Signature verified. Redirecting...';
@@ -3322,7 +3305,7 @@
                         if (!signResp.ok || !signData.signature) {
                             throw new Error(signData.error || 'WalletConnect signature failed');
                         }
-                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode(), 'walletconnect');
+                        const wcVerifyData = await postVerifyIdentity(stData.address, signData.signature, message, getPendingReferralCode());
                         const wcOkMsg = (wcVerifyData && wcVerifyData.referral_warning)
                             ? ('✅ Wallet connected via WalletConnect. ⚠️ ' + wcVerifyData.referral_warning + ' Redirecting...')
                             : '✅ Wallet connected via WalletConnect. Redirecting...';
@@ -3460,7 +3443,7 @@
                 // session approval that just completed.
                 _wcWakeWalletApp(session);
                 const signature = await sigReqPromise;
-                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode(), 'walletconnect');
+                const wcFbVerifyData = await postVerifyIdentity(address, signature, message, getPendingReferralCode());
                 
                 // CRITICAL: Wait for session to be persisted before redirect.
                 // WalletConnect v2 uses IndexedDB for session storage. A 1 s delay

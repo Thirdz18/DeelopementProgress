@@ -108,10 +108,6 @@
         users on this claim-link page know not to drain the refilled CELO.
     -->
     <script src="/static/js/gas-coverage-banner.js?v={{ ASSET_VERSION }}"></script>
-    {% if login_method == 'privy' %}
-    <script type="application/json" id="privySignerBootstrap">{{ {"appId": privy_app_id|default("", true)}|tojson }}</script>
-    <script type="module" src="{{ url_for('static', filename='js/privy-signer-bridge.js', v=ASSET_VERSION) }}"></script>
-    {% endif %}
     <script>
         const LOGIN_METHOD = "{{ login_method | default('walletconnect') }}";
         const SESSION_WALLET = "{{ wallet | default('') }}";
@@ -260,9 +256,6 @@
         }
 
         function _getEthProvider() {
-            if (typeof LOGIN_METHOD === "string" && LOGIN_METHOD.toLowerCase() === "privy" && typeof window.__getPrivyEthereumProvider === "function") {
-                return window.__privyEthereumProvider || null;
-            }
             try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
             const candidates = _collectInjectedProviders();
             if (!candidates.length) return null;
