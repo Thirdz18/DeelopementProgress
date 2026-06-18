@@ -58,13 +58,15 @@
   }
 
   async function getSigningProvider() {
+    const injected = getInjectedProvider();
+    if (injected) return injected;
     if (_shouldPreferWalletConnect() && typeof GMWalletConnect !== "undefined") {
       try {
         const wcProvider = await GMWalletConnect.getProvider();
         if (wcProvider) return wcProvider;
       } catch (_) {}
     }
-    return getInjectedProvider();
+    return null;
   }
 
   async function ensureCeloChain(provider) {
