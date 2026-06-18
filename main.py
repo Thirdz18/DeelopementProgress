@@ -1785,6 +1785,158 @@ def verify_identity():
         return jsonify({'error': 'Verification failed'}), 500
 
 
+@app.route('/api/turnkey/google-login', methods=['POST'])
+def turnkey_google_login():
+    """Authenticate with Google via Turnkey embedded wallet.
+
+    Flow:
+      1. Frontend sends a Google OIDC id_token
+      2. Backend verifies the token with Google
+      3. Checks Supabase for an existing Turnkey wallet mapping
+      4. If new user → calls Turnkey to create a sub-org + wallet
+      5. Creates a Flask session and returns the wallet address
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        id_token = (data.get('id_token') or '').strip()
+        referral_code = (data.get('referral_code') or '').strip()
+
+        if not id_token:
+            return jsonify({'success': False, 'error': 'Missing Google id_token'}), 400
+
+        # 1) Verify Google token
+        from turnkey_service import verify_google_id_token, create_sub_org_with_wallet
+        try:
+            goog = verify_google_id_token(id_token)
+        except ValueError as ve:
+            return jsonify({'success': False, 'error': str(ve)}), 401
+
+        email = goog.get('email', '')
+        google_sub = goog.get('sub', '')
+        user_name = goog.get('name', '') or email
+
+        if not email:
+            return jsonify({'success': False, 'error': 'No email in Google token'}), 400
+
+        # 2) Check Supabase for existing mapping
+        wallet_address = None
+        sub_org_id = None
+        is_new_user = True
+        try:
+            from supabase_client import get_supabase_client, safe_supabase_operation
+            sb = get_supabase_client()
+            if sb:
+                existing = safe_supabase_operation(
+                    lambda: sb.table('turnkey_wallets')
+                        .select('wallet_address, turnkey_sub_org_id')
+                        .eq('google_email', email)
+                        .limit(1)
+                        .execute(),
+                    operation_name="turnkey wallet lookup"
+                )
+                if existing and existing.data:
+                    row = existing.data[0]
+                    wallet_address = row.get('wallet_address')
+                    sub_org_id = row.get('turnkey_sub_org_id')
+                    is_new_user = False
+                    logger.info(f"👤 Returning Turnkey user: {email} → {wallet_address[:10]}...")
+        except Exception as db_err:
+            logger.warning(f"⚠️ Turnkey wallet DB lookup failed: {db_err}")
+
+        # 3) New user → create sub-org + wallet via Turnkey
+        if not wallet_address:
+            try:
+                result = create_sub_org_with_wallet(
+                    google_id_token=id_token,
+                    user_email=email,
+                    user_name=user_name,
+                )
+                wallet_address = result['wallet_address']
+                sub_org_id = result['sub_org_id']
+                logger.info(f"🆕 Turnkey wallet created: {email} → {wallet_address}")
+
+                # Persist the mapping
+                try:
+                    from supabase_client import get_supabase_admin_client, safe_supabase_operation
+                    sb_admin = get_supabase_admin_client()
+                    if sb_admin:
+                        safe_supabase_operation(
+                            lambda: sb_admin.table('turnkey_wallets').insert({
+                                'google_email': email,
+                                'google_sub': google_sub,
+                                'wallet_address': wallet_address,
+                                'turnkey_sub_org_id': sub_org_id,
+                                'turnkey_wallet_id': result.get('wallet_id', ''),
+                            }).execute(),
+                            operation_name="turnkey wallet insert"
+                        )
+                except Exception as ins_err:
+                    logger.warning(f"⚠️ Could not save Turnkey wallet mapping: {ins_err}")
+
+            except Exception as tk_err:
+                logger.error(f"❌ Turnkey wallet creation failed: {tk_err}")
+                return jsonify({'success': False, 'error': 'Wallet creation failed. Please try again.'}), 500
+
+        # 4) Normalise to EIP-55 checksum
+        try:
+            wallet_address = Web3.to_checksum_address(wallet_address)
+        except Exception:
+            pass
+
+        # 5) Create Flask session (same fields as verify-identity)
+        session.permanent = True
+        session['wallet'] = wallet_address
+        session['wallet_address'] = wallet_address
+        session['verified'] = True
+        session['ubi_verified'] = True
+        session['login_method'] = 'turnkey_google'
+        session['google_email'] = email
+        session['verification_time'] = datetime.now().isoformat()
+
+        # Track the login for analytics
+        analytics.track_verification_attempt(wallet_address, True)
+
+        # ── Referral processing (same logic as verify-identity) ──
+        referral_warning = None
+        if referral_code and is_new_user:
+            try:
+                from referral_program.referral_service import referral_service as ref_svc
+                validation = ref_svc.validate_referral_code(referral_code.upper())
+                if validation.get('valid'):
+                    referrer_wallet = validation.get('referrer_wallet')
+                    record_result = ref_svc.record_referral(referral_code.upper(), wallet_address)
+                    if record_result.get('success'):
+                        logger.info(f"📋 Referral recorded (Turnkey): {referral_code} for {wallet_address[:8]}...")
+                        try:
+                            from supabase_client import supabase_logger as _sb_log
+                            if _sb_log:
+                                _sb_log.save_referrer_wallet(wallet_address, referrer_wallet, referral_code.upper())
+                        except Exception as _sr_err:
+                            logger.warning(f"⚠️ Could not save referral data: {_sr_err}")
+                else:
+                    code_len = len(referral_code)
+                    if code_len < 8:
+                        referral_warning = f'Referral code "{referral_code.upper()}" looks incomplete ({code_len}/8 characters).'
+                    else:
+                        referral_warning = f'Referral code "{referral_code.upper()}" was not recognized.'
+            except Exception as ref_err:
+                logger.warning(f"⚠️ Referral processing error (Turnkey): {ref_err}")
+
+        response_data = {
+            'success': True,
+            'message': 'Google login successful!',
+            'wallet': wallet_address,
+            'redirect_to': '/wallet',
+        }
+        if referral_warning:
+            response_data['referral_warning'] = referral_warning
+        return jsonify(response_data)
+
+    except Exception as e:
+        logger.error(f"❌ Turnkey Google login error: {e}")
+        return jsonify({'success': False, 'error': 'Login failed'}), 500
+
+
 @app.route('/manual-wallet-login', methods=['POST'])
 def manual_wallet_login():
     """
