@@ -2598,12 +2598,20 @@ window._wcGetClient = function() {
             }
         }).then(function(client) {
             window._wcSignClient = client;
-            var sessions = client.session.getAll();
-            if (sessions.length > 0 && !window._wcSession) {
-                window._wcSession = sessions[sessions.length - 1];
-                console.log('✅ WC session restored from storage');
-            }
-            return client;
+            return (async function () {
+                var sessions = [];
+                var start = Date.now();
+                while (Date.now() - start < 3000) {
+                    sessions = client.session.getAll();
+                    if (sessions.length > 0) break;
+                    await new Promise(function (resolve) { setTimeout(resolve, 200); });
+                }
+                if (sessions.length > 0 && !window._wcSession) {
+                    window._wcSession = sessions[sessions.length - 1];
+                    console.log('✅ WC session restored from storage');
+                }
+                return client;
+            })();
         });
     });
 };
