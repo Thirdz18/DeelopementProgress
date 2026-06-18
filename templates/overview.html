@@ -1713,7 +1713,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            if (!ytPlayer || !ytPlayer.toggleMute) return;
+            if (!ytPlayer) return;
 
             if (musicMuted) {
                 ytPlayer.unMute();
