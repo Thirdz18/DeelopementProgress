@@ -223,26 +223,25 @@ The WalletConnect sidecar (`wc_service.js`) is started automatically by the Flas
 | `TELEGRAM_WEB_APP_URL` | Public base URL opened by Telegram Mini App buttons (e.g. `https://good-market-community.vercel.app`) |
 | `TELEGRAM_WEBHOOK_SECRET_TOKEN` | Optional shared secret for validating Telegram webhook calls |
 
-## Savings v5 — Custom Lock Days & USDT
+## Savings v6 — Weekly / Monthly Rewards
 
-The G$ Savings vault was redeployed as **GDSavings v5** to give savers full
-control over the lock period and to accept USDT alongside G$, CELO, and cUSD.
+The G$ Savings vault source is being prepared as **GDSavings v6** to simplify
+the UX to only two lock periods: Weekly (7 days) and Monthly (30 days).
 
 ### What changed vs. v4
 
-| | **v4** (previous) | **v5** (current) |
+| | **v4** (previous) | **v6** (prepared) |
 |---|---|---|
-| Lock durations | Fixed ladder: 1, 30, 60, …, 330, 365 days | **Any integer from 1 to 360 days** — saver chooses |
+| Lock periods | Fixed ladder: 1, 30, 60, …, 330, 365 days | Weekly (7d) or Monthly (30d) |
 | Tokens accepted | G$, CELO, cUSD | G$, CELO, cUSD, **USDT** (6-decimal, native USD₮ on Celo) |
-| Tester bonus | 1 day → +30 G$ | **1–29 days** → +30 G$ (any amount ≥ per-token MIN) |
-| Mid-tier bonus | 30–330d, step of 30 → `(lockDays/30) × 500 G$` | **30–360d, every day** → `⌊lockDays × 500 / 30⌋ G$` (≈16.67 G$/day, linear) |
-| Loyalty bonus | 365d only → +20,000 G$ | **300–360d**, amount ≥ 1M G$ equiv → +20,000 G$ (replaces mid-tier) |
+| Monthly rewards | 1 day → +30 G$ / 30d → +500 G$ / 365d → +20,000 G$ | **1,000–4,999 G$ → 50 G$; 5,000–9,999 G$ → 250 G$; 10,000–49,999 G$ → 500 G$; 50,000–99,999 G$ → 2,500 G$; 100,000+ G$ → 10,000 G$** |
+| Weekly rewards | — | **Monthly reward / 4**, rounded down |
 | Top-up rules | Inherits original unlock date | Inherits original unlock date (unchanged) |
 | Early withdrawal | Not allowed | Not allowed (unchanged) |
 
-The v5 contract is the only runtime savings contract now. Legacy v2/v4
-support has been removed from the Savings UI/backend, so new deploys and
-all user flows point at v5 only.
+The v6 contract will become the runtime savings contract once it is
+redeployed. Legacy v2/v4 support has been removed from the Savings UI/backend,
+so new deploys and all user flows are being aligned to v6.
 
 ### Per-token deposit limits
 
@@ -256,7 +255,7 @@ all user flows point at v5 only.
 `100k G$ equivalent` = 100,000 G$ / 100 CELO / 100 cUSD / 100 USDT  
 `1M G$ equivalent`  = 1,000,000 G$ / 1,000 CELO / 1,000 cUSD / 1,000 USDT
 
-### Deploying v5
+### Deploying v6
 
 Run the deployment script with `SAVING_KEY` set to the deployer wallet's
 private key. The USDT address defaults to native Tether on Celo
