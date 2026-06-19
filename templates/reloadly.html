@@ -2492,21 +2492,10 @@ function handleTabHash() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
     applyStoreVisibility();
     loadOrders();
     handleTabHash();
-    
-    // Restore WalletConnect session on page load if user logged in via WC
-    // This prevents QR modal from appearing during transactions
-    if (typeof GMWalletConnect !== 'undefined' && GMWalletConnect.isPreferred()) {
-        try {
-            await _wcGetClient();
-            // _wcGetClient() will populate _wcAddress and _wcBrowserSession if session exists
-        } catch (e) {
-            console.warn('[reloadly] WC session restore failed:', e);
-        }
-    }
 });
 window.addEventListener('hashchange', handleTabHash);
 </script>
