@@ -157,12 +157,6 @@
                 assetVersion: "{{ ASSET_VERSION }}",
             });
         }
-        if (typeof GMUnifiedSigner !== "undefined") {
-            GMUnifiedSigner.configure({
-                walletAddress: "{{ wallet }}",
-                loginMethod: "{{ login_method }}",
-            });
-        }
     </script>
 </head>
 <body>
@@ -1207,9 +1201,6 @@
             : null;
     }
     async function _walletGetWcProviderIfPreferred() {
-        if (typeof GMUnifiedSigner !== "undefined" && typeof GMUnifiedSigner.getWalletConnectProvider === "function") {
-            return GMUnifiedSigner.getWalletConnectProvider();
-        }
         try {
             return typeof GMUnifiedSigner !== "undefined"
                 ? GMUnifiedSigner.getSigningProvider(0)
