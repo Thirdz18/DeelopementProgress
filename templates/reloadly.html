@@ -1190,6 +1190,8 @@ async function wcConnectForReloadly() {
     }
 
     const client = await _wcGetClient();
+    // If _wcGetClient() already restored an existing session, don't create a new connection
+    if (_wcBrowserSession && _wcAddress) return _wcAddress;
     const result = await client.connect({
         requiredNamespaces: {},
         optionalNamespaces: {
