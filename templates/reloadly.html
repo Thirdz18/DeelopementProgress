@@ -1178,6 +1178,16 @@ async function _wcGetClient() {
 
 async function wcConnectForReloadly() {
     if (_wcAddress) return _wcAddress;
+    
+    // FIRST: Try to restore existing session without showing QR
+    try {
+        const client = await _wcGetClient();
+        if (_wcBrowserSession && _wcAddress) return _wcAddress;
+    } catch (e) {
+        console.warn('[reloadly] WC session restore failed:', e);
+    }
+    
+    // SECOND: Only if no existing session, try sidecar (shows QR)
     try {
         const uriResp = await fetch('/api/wc-uri');
         const uriData = await uriResp.json();
