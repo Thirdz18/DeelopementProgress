@@ -65,13 +65,14 @@
       return GMUnifiedSigner.getSigningProvider();
     }
     const injected = getInjectedProvider();
+    if (injected) return injected;
     if (_shouldPreferWalletConnect() && typeof GMWalletConnect !== "undefined") {
       try {
         const wcProvider = await GMWalletConnect.getProvider();
         if (wcProvider) return wcProvider;
       } catch (_) {}
     }
-    return injected;
+    return null;
   }
 
   async function ensureCeloChain(provider) {
