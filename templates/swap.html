@@ -2042,7 +2042,17 @@
         }
 
         async function _wcGetClient() {
-            if (_wcSignClient) return _wcSignClient;
+            // If we already have a client with restored session, return immediately
+            if (_wcSignClient && _wcBrowserSession && _wcAddress) {
+                return _wcSignClient;
+            }
+            
+            // If we have a client but no session, try to restore it
+            if (_wcSignClient && !_wcBrowserSession) {
+                await _restoreWcSession();
+                return _wcSignClient;
+            }
+            
             // Reuse a SignClient that another page on the same origin (e.g.
             // homepage login, savings) already initialised — WalletConnect v2
             // persists pairing metadata in shared `localStorage` keys so we
@@ -2065,6 +2075,17 @@
                 });
                 try { window._wcSignClient = _wcSignClient; } catch (_) {}
             }
+            
+            // Wait for session restoration to complete
+            await _restoreWcSession();
+            
+            return _wcSignClient;
+        }
+        
+        // Helper function to restore WC session from localStorage or SDK
+        async function _restoreWcSession() {
+            // If session already restored, skip
+            if (_wcBrowserSession && _wcAddress) return;
             
             // Check localStorage FIRST (fast path) - available immediately
             var storedTopic = localStorage.getItem('wc_session_topic');
@@ -2106,31 +2127,37 @@
                             window._wcSession = _wcBrowserSession;
                             _wcAddress = storedAddress;
                             console.log('[swap] WC session restored from SDK storage:', storedTopic);
-                            return _wcSignClient;
+                            return;
                         }
                         
-                        // Try to restore from localStorage
+                        // Try to restore from localStorage - subscribe to relay first
                         if (parsedSession.topic === storedTopic) {
-                            // Subscribe to relay first
+                            // Subscribe to relay to establish WebSocket connection
                             try {
                                 if (_wcSignClient.core && _wcSignClient.core.relayer && typeof _wcSignClient.core.relayer.subscribe === 'function') {
-                                    _wcSignClient.core.relayer.subscribe(storedTopic).catch(function(_){});
+                                    await _wcSignClient.core.relayer.subscribe(storedTopic);
+                                    console.log('[swap] Relay subscription established for:', storedTopic);
                                 }
-                            } catch (_) {}
+                            } catch (err) {
+                                console.warn('[swap] Relay subscribe error:', err && err.message);
+                            }
                             
-                            // Inject session
+                            // Inject session into SDK's session store
                             try {
                                 if (_wcSignClient.session && typeof _wcSignClient.session.set === 'function') {
                                     _wcSignClient.session.set(parsedSession.topic, parsedSession);
+                                    console.log('[swap] Session injected into SDK');
                                 }
-                            } catch (_) {}
+                            } catch (err) {
+                                console.warn('[swap] Session inject error:', err && err.message);
+                            }
                             
                             _wcBrowserSession = parsedSession;
                             _wcMode = "browser";
                             window._wcSession = _wcBrowserSession;
                             _wcAddress = storedAddress;
                             console.log('[swap] WC session restored from localStorage:', storedTopic);
-                            return _wcSignClient;
+                            return;
                         }
                     }
                 } catch (parseErr) { console.warn('[swap] localStorage parse error:', parseErr); }
@@ -2147,31 +2174,37 @@
                 } catch (_) {}
             }
             
-            // Restore an existing session from SDK storage as fallback
-            try {
-                if (!_wcBrowserSession && _wcSignClient.session && _wcSignClient.session.getAll) {
-                    const sessions = _wcSignClient.session.getAll();
-                    if (sessions && sessions.length) {
-                        const restored = sessions[sessions.length - 1];
-                        _wcBrowserSession = restored;
-                        _wcMode = "browser";
-                        if (window._wcSession === undefined || window._wcSession === null) {
-                            try { window._wcSession = restored; } catch (_) {}
-                        }
-                        const ns = restored.namespaces || {};
-                        Object.keys(ns).some(function (key) {
-                            const accts = (ns[key] && ns[key].accounts) || [];
-                            if (accts.length) {
-                                _wcAddress = String(accts[0]).split(':').pop();
-                                return true;
+            // Poll for SDK sessions as final fallback
+            var pollStart = Date.now();
+            while (Date.now() - pollStart < 3000) {
+                try {
+                    if (_wcSignClient.session && _wcSignClient.session.getAll) {
+                        const sessions = _wcSignClient.session.getAll();
+                        if (sessions && sessions.length) {
+                            const restored = sessions[sessions.length - 1];
+                            _wcBrowserSession = restored;
+                            _wcMode = "browser";
+                            if (window._wcSession === undefined || window._wcSession === null) {
+                                try { window._wcSession = restored; } catch (_) {}
                             }
-                            return false;
-                        });
-                        console.log('[swap] WC session restored from SDK storage');
+                            const ns = restored.namespaces || {};
+                            Object.keys(ns).some(function (key) {
+                                const accts = (ns[key] && ns[key].accounts) || [];
+                                if (accts.length) {
+                                    _wcAddress = String(accts[0]).split(':').pop();
+                                    return true;
+                                }
+                                return false;
+                            });
+                            console.log('[swap] WC session found via SDK polling');
+                            return;
+                        }
                     }
-                }
-            } catch (_) { /* no-op */ }
-            return _wcSignClient;
+                } catch (_) {}
+                await new Promise(function(r) { setTimeout(r, 200); });
+            }
+            
+            console.log('[swap] No WC session found - user needs to reconnect');
         }
         
         // Derive the correct eip155 chain string for a WalletConnect
