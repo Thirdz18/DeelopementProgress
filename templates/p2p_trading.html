@@ -558,6 +558,12 @@ if (typeof GMWalletConnect !== "undefined") {
     assetVersion: "{{ ASSET_VERSION }}",
   });
 }
+if (typeof GMUnifiedSigner !== "undefined") {
+  GMUnifiedSigner.configure({
+    walletAddress: "{{ wallet }}",
+    loginMethod: "{{ login_method | default('walletconnect') }}",
+  });
+}
 if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
   window.P2PEscrow.configure({
     walletAddress: "{{ wallet }}",
