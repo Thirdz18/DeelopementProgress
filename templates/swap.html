@@ -2413,7 +2413,18 @@
             return await _wcBrowserConnect();
         }
 
-        async function _wcBridgeRequest(method, params) {
+        async function _wcBridgeRequest(methodOrObj, rawParams) {
+            // Normalise both calling conventions:
+            //   EIP-1193 (ethers BrowserProvider): request({ method, params })
+            //   Two-arg legacy:                    request(method, params)
+            let method, params;
+            if (methodOrObj && typeof methodOrObj === 'object' && typeof methodOrObj.method === 'string') {
+                method = methodOrObj.method;
+                params = methodOrObj.params;
+            } else {
+                method = methodOrObj;
+                params = rawParams;
+            }
             if (method === 'eth_accounts' || method === 'eth_requestAccounts') {
                 if (!_wcAddress) await _wcConnectSwap();
                 return [_wcAddress];
@@ -4345,7 +4356,12 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ direction: reserveDirection, amount: String(amount) })
                 });
-                const data = await resp.json();
+                if (!resp.ok && resp.status !== 400 && resp.status !== 503) {
+                    throw new Error(`Server error (HTTP ${resp.status})`);
+                }
+                let data;
+                try { data = await resp.json(); }
+                catch (_je) { throw new Error("Server returned an invalid response — please try again."); }
                 if (!data || !data.success) {
                     throw new Error(data && data.error ? data.error : "Quote failed");
                 }
