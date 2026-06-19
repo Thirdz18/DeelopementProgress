@@ -1632,6 +1632,25 @@
         let _wcBrowserSession = null;
         let _wcSdkLoading = null;
 
+        function _wcExtendIfExpiring(client, topic, session) {
+            if (!client || !topic || !session || !session.expiry) return;
+            var secsLeft = session.expiry - Math.floor(Date.now() / 1000);
+            if (secsLeft <= 0 || secsLeft > 2 * 24 * 3600) return;
+            console.log('[WC] Session expires in', Math.round(secsLeft / 3600), 'h — requesting extension...');
+            client.extend({ topic: topic }).then(function() {
+                console.log('[WC] Session extended successfully');
+                try { localStorage.setItem('wc_session_timestamp', Date.now().toString()); } catch(_) {}
+                try {
+                    var active = client.getActiveSessions ? client.getActiveSessions() : {};
+                    var updated = active[topic];
+                    if (!updated && client.session && client.session.getAll) {
+                        updated = client.session.getAll().find(function(x) { return x.topic === topic; });
+                    }
+                    if (updated) localStorage.setItem('wc_session_data', JSON.stringify(updated));
+                } catch(_) {}
+            }).catch(function(e) { console.warn('[WC] Extend failed:', e && e.message); });
+        }
+
         // Trust Wallet mobile-specific provider discovery:
         // keep strict scope so non-Trust flows preserve existing behavior.
         window.__swapEip6963Providers = window.__swapEip6963Providers || [];
@@ -2106,6 +2125,7 @@
                             window._wcSession = _wcBrowserSession;
                             _wcAddress = storedAddress;
                             console.log('[swap] WC session restored from SDK storage:', storedTopic);
+                            _wcExtendIfExpiring(_wcSignClient, storedTopic, _wcBrowserSession);
                             return _wcSignClient;
                         }
                         
@@ -2130,6 +2150,7 @@
                             window._wcSession = _wcBrowserSession;
                             _wcAddress = storedAddress;
                             console.log('[swap] WC session restored from localStorage:', storedTopic);
+                            _wcExtendIfExpiring(_wcSignClient, storedTopic, _wcBrowserSession);
                             return _wcSignClient;
                         }
                     }
