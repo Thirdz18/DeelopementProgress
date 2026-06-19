@@ -4999,11 +4999,16 @@
 
                 setStatus('Gas ready. Connecting to wallet…', 'var(--text-dim)');
 
-                const accounts = await provider.request({ method: 'eth_requestAccounts' });
-                if (!accounts || !accounts.length) throw new Error('No wallet account available.');
-                const from = accounts[0];
-                if (from.toLowerCase() !== WALLET.toLowerCase()) {
-                    throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                // For WC users, we know the address from session - no need to call eth_requestAccounts
+                // which might trigger QR modal. Use the configured wallet address directly.
+                let from = WALLET;
+                if (!usingWcBridge) {
+                    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+                    if (!accounts || !accounts.length) throw new Error('No wallet account available.');
+                    from = accounts[0];
+                    if (from.toLowerCase() !== WALLET.toLowerCase()) {
+                        throw new Error('Wrong wallet connected. Please switch to your GoodMarket wallet.');
+                    }
                 }
 
                 // Preflight one more time right before sending tx because gas price can spike.
@@ -5178,10 +5183,9 @@
             if (wcPreferred) {
                 const wcProvider = await _walletGetWcProviderIfPreferred();
                 if (wcProvider) {
-                    const accounts = await wcProvider.request({ method: 'eth_requestAccounts' });
-                    if (accounts && accounts.length > 0) {
-                        return { provider: wcProvider, from: accounts[0] };
-                    }
+                    // For WC users, we know the address from session - no need to call eth_requestAccounts
+                    // which might trigger QR modal. Use the configured wallet address directly.
+                    return { provider: wcProvider, from: WALLET };
                 }
             }
 
