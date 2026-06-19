@@ -1,45 +1,53 @@
-# [Project name]
+# GoodMarket
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A Web3 Learn & Earn platform built on the GoodDollar ecosystem. Users earn G$ tokens on the Celo network through educational quizzes, social media tasks, minigames, and community engagement.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `gunicorn --config gunicorn.conf.py main:app` — start the app (port 5000)
+- The workflow "Start application" runs this automatically
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- **Backend:** Python 3.12, Flask, Gunicorn (gthread workers)
+- **Frontend:** Server-side rendered Jinja2 templates + static assets
+- **Database:** Supabase (PostgreSQL)
+- **Blockchain:** Web3.py, Celo network, GoodDollar (G$) contracts
+- **WalletConnect:** Node.js sidecar (`wc_service.js`, port 3001)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `main.py` — Flask app entry point, initializes all services and blueprints
+- `routes.py` — Core API routes and auth decorators
+- `blockchain.py` — Blockchain logic (UBI claims, G$ balances)
+- `config.py` — Global configuration and reward settings
+- `supabase_client.py` — Database connection and utilities
+- `gunicorn.conf.py` — Gunicorn server config (reads `PORT` env var)
+- `templates/` — Jinja2 HTML templates (30 pages)
+- `static/` — Static assets (JS bundles, icons, manifest)
+- `learn_and_earn/` — Learn & Earn quiz module
+- `minigames/` — Minigames module
+- `savings/` — G$ Savings module
+- `p2p_trading/` — P2P trading module
+- `contracts/` — Solidity smart contracts and deployment scripts
 
-## Architecture decisions
+## Required Secrets
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
+The app gracefully degrades when these are missing, but full functionality requires:
+- `SUPABASE_URL` + `SUPABASE_KEY` — database
+- `SUPABASE_SERVICE_ROLE_KEY` — admin operations
+- `COMMUNITY_KEY` — community stories blockchain key
+- `MERCHANT_ADDRESS` + `GAMES_KEY` — minigames
+- `WALLETCONNECT_PROJECT_ID` — WalletConnect sidecar
+- `RELOADLY_CLIENT_ID` + `RELOADLY_CLIENT_SECRET` — gift cards
+- `LEARN_EARN_WALLET` — Learn & Earn rewards wallet
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The app starts with many warnings about missing env vars — this is expected; features degrade gracefully
+- `gunicorn.conf.py` reads `PORT` from environment; default is 5000
+- WalletConnect sidecar (`wc_service.js`) is started automatically by `main.py` when `WALLETCONNECT_PROJECT_ID` is set
 
-## Pointers
+## User preferences
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+_Populate as needed._
