@@ -1,0 +1,16 @@
+{
+  "name": "goodmarket",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "GoodMarket Web3 Learn & Earn platform",
+  "private": true,
+  "scripts": {},
+  "dependencies": {
+    "@privy-io/react-auth": "^3.29.2",
+    "@turnkey/core": "^2.2.0",
+    "esbuild": "^0.28.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "viem": "^2.52.2"
+  }
+}
