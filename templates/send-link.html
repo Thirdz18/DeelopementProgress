@@ -430,6 +430,7 @@
                         if (sdkSessions[storedTopic]) {
                             _wcAddress = storedAddress;
                             _wcMode = "browser";
+                            _wcBrowserSession = sdkSessions[storedTopic];
                             console.log('[send-link] WC session restored from SDK storage:', storedTopic);
                             return _wcSignClient;
                         }
@@ -452,6 +453,7 @@
                             
                             _wcAddress = storedAddress;
                             _wcMode = "browser";
+                            _wcBrowserSession = parsedSession;
                             console.log('[send-link] WC session restored from localStorage:', storedTopic);
                             return _wcSignClient;
                         }
