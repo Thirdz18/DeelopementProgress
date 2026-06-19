@@ -1109,6 +1109,7 @@ async function _wcGetClient() {
                 if (sdkSessions[storedTopic]) {
                     _wcAddress = storedAddress;
                     _wcMode = "browser";
+                    _wcBrowserSession = sdkSessions[storedTopic];
                     console.log('[reloadly] WC session restored from SDK storage:', storedTopic);
                     return _wcSignClient;
                 }
@@ -1131,6 +1132,7 @@ async function _wcGetClient() {
                     
                     _wcAddress = storedAddress;
                     _wcMode = "browser";
+                    _wcBrowserSession = parsedSession;
                     console.log('[reloadly] WC session restored from localStorage:', storedTopic);
                     return _wcSignClient;
                 }
