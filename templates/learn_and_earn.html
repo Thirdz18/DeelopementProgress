@@ -5313,15 +5313,12 @@ document.addEventListener('DOMContentLoaded', function() {
                             
                             // Try to restore from localStorage
                             if (parsedSession.topic === storedTopic) {
-                                // Subscribe to relay first - must await this!
+                                // Subscribe to relay first
                                 try {
                                     if (client.core && client.core.relayer && typeof client.core.relayer.subscribe === 'function') {
-                                        await client.core.relayer.subscribe(storedTopic);
-                                        console.log('[learn] Relay subscription established');
+                                        client.core.relayer.subscribe(storedTopic).catch(function(_){});
                                     }
-                                } catch (err) {
-                                    console.warn('[learn] Relay subscribe error:', err && err.message);
-                                }
+                                } catch (_) {}
                                 
                                 // Inject session
                                 try {

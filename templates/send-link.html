@@ -436,15 +436,12 @@
                         
                         // Try to restore from localStorage
                         if (parsedSession.topic === storedTopic) {
-                            // Subscribe to relay first - must await this!
+                            // Subscribe to relay first
                             try {
                                 if (_wcSignClient.core && _wcSignClient.core.relayer && typeof _wcSignClient.core.relayer.subscribe === 'function') {
-                                    await _wcSignClient.core.relayer.subscribe(storedTopic);
-                                    console.log('[send-link] Relay subscription established');
+                                    _wcSignClient.core.relayer.subscribe(storedTopic).catch(function(_){});
                                 }
-                            } catch (err) {
-                                console.warn('[send-link] Relay subscribe error:', err && err.message);
-                            }
+                            } catch (_) {}
                             
                             // Inject session
                             try {
