@@ -1,0 +1,1 @@
+- [Turnkey API key corruption fix](turnkey-key-corruption.md) — pub/priv keys split across env vars; code reconstructs; email OTP blocked at plan level.
