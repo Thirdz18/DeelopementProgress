@@ -3863,6 +3863,21 @@
 
         window.addEventListener('load', loadHomepageVideos);
 
+        // Explicitly expose onclick-called functions on window so they are
+        // always reachable even if the script block loads after the first
+        // user interaction (race condition on slow connections).
+        window.openWalletModal         = openWalletModal;
+        window.closeWalletModal        = closeWalletModal;
+        window.showWalletOptions       = showWalletOptions;
+        window.showCreateWalletOptions = showCreateWalletOptions;
+        window.showWalletConnectOptions= showWalletConnectOptions;
+        window.connectInjectedWallet   = connectInjectedWallet;
+        window.connectWalletConnect    = connectWalletConnect;
+        window.showSection             = showSection;
+        window.carouselGoTo            = carouselGoTo;
+        window.carouselMove            = carouselMove;
+        window.toggleMainMenu          = toggleMainMenu;
+
         </script>
 
 
@@ -3980,6 +3995,7 @@
         document.getElementById('musicToggleBtn').addEventListener('mouseleave', function() {
             if (!this.classList.contains('waiting')) this.style.transform = 'scale(1)';
         });
+        window.toggleMusic = toggleMusic;
     </script>
 
     <div id="ytBgMusic" style="display:none;"></div>
