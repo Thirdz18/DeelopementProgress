@@ -81,9 +81,18 @@
       headers: headers,
       body: JSON.stringify(body),
     }).then(function (resp) {
+      var contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        // Non-JSON response (HTML error page, wrong server, etc.)
+        throw new Error('Server error (' + resp.status + '). Please try again or use Google sign-in.');
+      }
       return resp.json().then(function (data) {
         if (!resp.ok) {
           var msg = data.error || data.message || ('Request failed (' + resp.status + ')');
+          // Translate Turnkey "Not Found" into something actionable
+          if (msg === 'Not Found' || resp.status === 404) {
+            msg = 'Email login is unavailable right now. Please use Google sign-in instead.';
+          }
           throw new Error(msg);
         }
         return data;
