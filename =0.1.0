@@ -1,0 +1,9 @@
+Looking in indexes: http://package-firewall.replit.local/pypi/simple/
+Collecting turnkey-api-key-stamper
+  Downloading http://package-firewall.replit.local/pypi/packages/46/28/0f4a318448d5e76acb2c7bc02c9fe253554b6663ea1f1905dbdc36bbe1c3/turnkey_api_key_stamper-0.1.0-py3-none-any.whl.metadata (1.7 kB)
+Requirement already satisfied: cryptography>=41.0.0 in ./.pythonlibs/lib/python3.11/site-packages (from turnkey-api-key-stamper) (49.0.0)
+Requirement already satisfied: cffi>=2.0.0 in ./.pythonlibs/lib/python3.11/site-packages (from cryptography>=41.0.0->turnkey-api-key-stamper) (2.0.0)
+Requirement already satisfied: pycparser in ./.pythonlibs/lib/python3.11/site-packages (from cffi>=2.0.0->cryptography>=41.0.0->turnkey-api-key-stamper) (3.0)
+Downloading http://package-firewall.replit.local/pypi/packages/46/28/0f4a318448d5e76acb2c7bc02c9fe253554b6663ea1f1905dbdc36bbe1c3/turnkey_api_key_stamper-0.1.0-py3-none-any.whl (7.5 kB)
+Installing collected packages: turnkey-api-key-stamper
+Successfully installed turnkey-api-key-stamper-0.1.0
