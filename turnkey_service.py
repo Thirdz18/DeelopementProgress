@@ -268,6 +268,70 @@ def verify_email_otp(otp_id: str, otp_code: str) -> bool:
     raise ValueError(f"Invalid OTP code ({status}): {json.dumps(failure)[:200]}")
 
 
+# ---------------------------------------------------------------------------
+# Supabase Auth – email OTP (6-digit code sent by Supabase SMTP)
+# ---------------------------------------------------------------------------
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_KEY", "").strip()
+
+
+def send_supabase_otp(email: str) -> None:
+    """Ask Supabase Auth to send a 6-digit OTP to *email*.
+
+    Requires the ``SUPABASE_KEY`` (anon/public key) env var.
+    Raises ``RuntimeError`` when the key is absent or the call fails.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise RuntimeError(
+            "SUPABASE_KEY (anon key) is not configured. "
+            "Add it from Supabase → Project Settings → API → anon/public key."
+        )
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+    }
+    resp = _requests.post(
+        f"{SUPABASE_URL}/auth/v1/otp",
+        json={"email": email, "create_user": True},
+        headers=headers,
+        timeout=15,
+    )
+    if resp.status_code not in (200, 204):
+        body = resp.text[:200]
+        raise RuntimeError(f"Supabase OTP send failed ({resp.status_code}): {body}")
+    logger.info("Supabase OTP sent to %s", email)
+
+
+def verify_supabase_otp(email: str, token: str) -> dict:
+    """Verify a 6-digit OTP token from Supabase Auth.
+
+    Returns the Supabase user dict on success.
+    Raises ``ValueError`` on wrong/expired token, ``RuntimeError`` on other errors.
+    """
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise RuntimeError("SUPABASE_KEY (anon key) is not configured.")
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+    }
+    resp = _requests.post(
+        f"{SUPABASE_URL}/auth/v1/verify",
+        json={"type": "email", "token": token, "email": email},
+        headers=headers,
+        timeout=15,
+    )
+    if resp.status_code == 401 or resp.status_code == 422:
+        raise ValueError("Incorrect or expired code. Please check your email and try again.")
+    if not resp.ok:
+        body = resp.text[:200]
+        raise RuntimeError(f"Supabase OTP verify failed ({resp.status_code}): {body}")
+    data = resp.json()
+    user = data.get("user") or {}
+    logger.info("Supabase OTP verified for %s → user_id=%s", email, user.get("id", "?"))
+    return user
+
+
 def create_sub_org_for_email(email: str, user_name: str = "") -> dict:
     """Create a Turnkey sub-organization for an email-only user (no OAuth provider).
 
