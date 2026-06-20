@@ -2074,6 +2074,9 @@ def turnkey_email_otp_verify():
 
         session.pop('_email_otp_contact', None)
 
+        import hashlib
+        email_hash = hashlib.sha256(email.encode()).hexdigest()
+
         wallet_address = None
         sub_org_id = None
         is_new_user = True
@@ -2083,45 +2086,41 @@ def turnkey_email_otp_verify():
             sb = get_supabase_client()
             if sb:
                 existing = safe_supabase_operation(
-                    lambda: sb.table('turnkey_wallets')
-                        .select('wallet_address, turnkey_sub_org_id')
-                        .eq('google_email', email)
+                    lambda: sb.table('email_wallet_links')
+                        .select('wallet_address')
+                        .eq('email_hash', email_hash)
                         .limit(1)
                         .execute(),
-                    operation_name="email otp wallet lookup"
+                    operation_name="email wallet lookup"
                 )
                 if existing and existing.data:
-                    row = existing.data[0]
-                    wallet_address = row.get('wallet_address')
-                    sub_org_id = row.get('turnkey_sub_org_id')
+                    wallet_address = existing.data[0].get('wallet_address')
                     is_new_user = False
-                    logger.info(f"👤 Returning email-OTP user: {email} → {wallet_address[:10]}...")
+                    logger.info(f"👤 Returning email user: {email[:6]}… → {wallet_address[:10]}...")
         except Exception as db_err:
-            logger.warning(f"⚠️ Turnkey wallet DB lookup failed: {db_err}")
+            logger.warning(f"⚠️ email_wallet_links lookup failed: {db_err}")
 
         if not wallet_address:
             try:
                 result = create_sub_org_for_email(email=email, user_name=user_name)
                 wallet_address = result['wallet_address']
                 sub_org_id = result['sub_org_id']
-                logger.info(f"🆕 Email-OTP wallet created: {email} → {wallet_address}")
+                logger.info(f"🆕 Email wallet created: {email[:6]}… → {wallet_address}")
 
                 try:
                     from supabase_client import get_supabase_admin_client, safe_supabase_operation
                     sb_admin = get_supabase_admin_client()
                     if sb_admin:
                         safe_supabase_operation(
-                            lambda: sb_admin.table('turnkey_wallets').insert({
-                                'google_email': email,
-                                'google_sub': '',
+                            lambda: sb_admin.table('email_wallet_links').insert({
+                                'email_hash': email_hash,
                                 'wallet_address': wallet_address,
-                                'turnkey_sub_org_id': sub_org_id,
-                                'turnkey_wallet_id': result.get('wallet_id', ''),
+                                'login_method': 'turnkey_email',
                             }).execute(),
-                            operation_name="email otp wallet insert"
+                            operation_name="email wallet insert"
                         )
                 except Exception as ins_err:
-                    logger.warning(f"⚠️ Could not save email-OTP wallet mapping: {ins_err}")
+                    logger.warning(f"⚠️ Could not save to email_wallet_links: {ins_err}")
 
             except Exception as tk_err:
                 logger.error(f"❌ Turnkey email wallet creation failed: {tk_err}")

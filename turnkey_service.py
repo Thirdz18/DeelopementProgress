@@ -273,7 +273,7 @@ def verify_email_otp(otp_id: str, otp_code: str) -> bool:
 # ---------------------------------------------------------------------------
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_KEY", "").strip()
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 
 
 def send_supabase_otp(email: str) -> None:
