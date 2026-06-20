@@ -69,3 +69,13 @@ web3
 websockets
 py-solc-x
 pyiceberg
+email_validator
+flask
+flask-sqlalchemy
+gunicorn
+psycopg2-binary
+email_validator
+flask
+flask-sqlalchemy
+gunicorn
+psycopg2-binary

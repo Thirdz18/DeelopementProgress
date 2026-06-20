@@ -1,8 +1,9 @@
-modules = ["nodejs-24", "python-3.12"]
+modules = ["web", "nodejs-20", "python-3.11"]
 
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -24,16 +25,16 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "gunicorn --config gunicorn.conf.py main:app"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
 
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
+waitForPort = 5000
+
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "FLASK_VANILLA_JS"
 expertMode = true
 
 [postMerge]
@@ -42,7 +43,7 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "freetype", "gmp", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "zlib"]
+packages = ["cargo", "freetype", "gmp", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "postgresql", "rustc", "tcl", "tk", "zlib"]
 
 [[ports]]
 localPort = 5000
