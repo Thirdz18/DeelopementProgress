@@ -6222,23 +6222,64 @@
         var _wcExpiryTimer = null;
 
         function wcSessionBannerDismiss() {
+            // Only dismissable during warning — never during expiry (auto-logout handles that)
             var b = document.getElementById('wcSessionExpiryBanner');
             if (b) { b.classList.remove('wc-warn', 'wc-expired'); }
-            // Re-check every 5 min — re-show only on actual expiry
             if (_wcExpiryTimer) clearTimeout(_wcExpiryTimer);
             _wcExpiryTimer = setTimeout(checkWcSessionExpiry, 5 * 60 * 1000);
         }
 
         function wcSessionReconnect() {
-            // Log out cleanly so the login page offers WalletConnect again
-            window.location.href = '/logout?next=/wallet';
+            _wcClearLocalStorage();
+            window.location.href = '/logout';
+        }
+
+        function _wcClearLocalStorage() {
+            try {
+                ['wc_session_topic', 'wc_session_address', 'wc_session_data',
+                 'wc_session_timestamp', 'wc_session_chains'].forEach(function(k) {
+                    localStorage.removeItem(k);
+                });
+            } catch (_) {}
+        }
+
+        var _wcAutoLogoutTimer = null;
+
+        function _wcStartAutoLogout(delaySec) {
+            // Show countdown in the banner message, then auto-logout
+            var banner = document.getElementById('wcSessionExpiryBanner');
+            var msgEl  = document.getElementById('wcSessionExpiryMsg');
+            var btnEl  = document.getElementById('wcSessionExpiryBtn');
+            var dismissEl = document.getElementById('wcSessionExpiryDismiss');
+
+            // Hide dismiss button — user cannot skip expiry logout
+            if (dismissEl) dismissEl.style.display = 'none';
+            if (btnEl) { btnEl.textContent = 'Logout Now'; }
+
+            banner.classList.remove('wc-warn');
+            banner.classList.add('wc-expired');
+
+            var remaining = delaySec;
+            function tick() {
+                if (msgEl) {
+                    msgEl.textContent = '🔴 Your WalletConnect session has expired. Logging out in ' + remaining + ' second' + (remaining !== 1 ? 's' : '') + '…';
+                }
+                if (remaining <= 0) {
+                    _wcClearLocalStorage();
+                    window.location.href = '/logout';
+                    return;
+                }
+                remaining--;
+                _wcAutoLogoutTimer = setTimeout(tick, 1000);
+            }
+            tick();
         }
 
         function checkWcSessionExpiry() {
             if (_wcExpiryTimer) { clearTimeout(_wcExpiryTimer); _wcExpiryTimer = null; }
 
             var loginMethod = (typeof LOGIN_METHOD !== 'undefined' ? LOGIN_METHOD : '').toLowerCase();
-            if (loginMethod !== 'walletconnect') return; // Only relevant for WC users
+            if (loginMethod !== 'walletconnect') return;
 
             var banner  = document.getElementById('wcSessionExpiryBanner');
             var msgEl   = document.getElementById('wcSessionExpiryMsg');
@@ -6256,7 +6297,6 @@
                 }
             } catch (_) {}
 
-            // Also check the raw timestamp age as a secondary guard
             var storedTopic = localStorage.getItem('wc_session_topic');
             var storedTs    = parseInt(localStorage.getItem('wc_session_timestamp') || '0', 10);
             var tsAgeMs     = storedTs ? (Date.now() - storedTs) : Infinity;
@@ -6265,23 +6305,20 @@
             var isExpiredByTimestamp = tsAgeMs > maxAgeMs;
             var secsLeft = expiry ? (expiry - nowSec) : (storedTopic ? (maxAgeMs - tsAgeMs) / 1000 : -1);
 
-            var state; // 'ok' | 'warning' | 'expired'
+            var state;
             if (!storedTopic || isExpiredByTimestamp || secsLeft <= 0) {
                 state = 'expired';
-            } else if (secsLeft < 24 * 60 * 60) { // < 24 hours
+            } else if (secsLeft < 24 * 60 * 60) {
                 state = 'warning';
             } else {
                 state = 'ok';
             }
 
-            // Update banner
             banner.classList.remove('wc-warn', 'wc-expired');
 
             if (state === 'expired') {
-                msgEl.textContent = '🔴 Your WalletConnect session has expired. Reconnect to continue claiming G$.';
-                if (btnEl) btnEl.textContent = 'Reconnect';
-                banner.classList.add('wc-expired');
-                // Don't auto-hide on expiry — user must act
+                // Auto-logout after a 5-second countdown so user sees what's happening
+                _wcStartAutoLogout(5);
                 return;
             }
 
@@ -6289,15 +6326,17 @@
                 var hoursLeft = Math.max(1, Math.round(secsLeft / 3600));
                 msgEl.textContent = '⚠️ Your WalletConnect session expires in ~' + hoursLeft + ' hour' + (hoursLeft !== 1 ? 's' : '') + '. Reconnect soon to avoid claim failures.';
                 if (btnEl) btnEl.textContent = 'Reconnect Now';
+                // Restore dismiss button in warning state
+                var dismissEl2 = document.getElementById('wcSessionExpiryDismiss');
+                if (dismissEl2) dismissEl2.style.display = '';
                 banner.classList.add('wc-warn');
-                // Re-check every 30 min while warning is visible
                 _wcExpiryTimer = setTimeout(checkWcSessionExpiry, 30 * 60 * 1000);
                 return;
             }
 
-            // state === 'ok': schedule next check for when we'll be in warning zone
+            // state === 'ok': schedule next check
             var msUntilWarning = Math.max(0, (secsLeft - 24 * 60 * 60) * 1000);
-            var nextCheck = Math.min(msUntilWarning + 60 * 1000, 60 * 60 * 1000); // at most 1-hour poll
+            var nextCheck = Math.min(msUntilWarning + 60 * 1000, 60 * 60 * 1000);
             _wcExpiryTimer = setTimeout(checkWcSessionExpiry, nextCheck);
         }
 
