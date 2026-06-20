@@ -281,7 +281,7 @@ def create_sub_org_for_email(email: str, user_name: str = "") -> dict:
         "timestampMs": str(int(time.time() * 1000)),
         "organizationId": TURNKEY_ORG_ID,
         "parameters": {
-            "subOrganizationName": f"GoodMarket \u2013 {email}",
+            "subOrganizationName": f"GoodMarket-{email}",
             "rootUsers": [
                 {
                     "userName": user_name or email,

@@ -140,19 +140,34 @@
       return Promise.resolve(false);
     }
 
-    showStatus('email', '⏳ Sending a code to your email…', 'info');
+    showStatus('email', '⏳ Creating your wallet…', 'info');
     showVerifySection(false);
 
     return fetch('/api/turnkey/email-otp-init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email }),
+      body: JSON.stringify({
+        email: email,
+        user_name: getNameValue(),
+        referral_code: getReferralCode(),
+      }),
     }).then(function (resp) {
       return resp.json().then(function (data) { return { ok: resp.ok, data: data }; });
     }).then(function (result) {
       if (!result.ok || !result.data.success) {
-        throw new Error(result.data.error || 'Could not send code (' + (result.data.status || 'unknown') + ')');
+        throw new Error(result.data.error || 'Could not create wallet');
       }
+      // Wallet created directly — no OTP step needed
+      if (result.data.wallet_created) {
+        var warning = result.data.referral_warning;
+        showStatus('email',
+          warning ? ('✅ Wallet ready! ⚠️ ' + warning + ' Redirecting…') : '✅ Wallet ready! Redirecting…',
+          warning ? 'warning' : 'success'
+        );
+        setTimeout(function () { window.location.href = result.data.redirect_to || '/wallet'; }, warning ? 2400 : 900);
+        return true;
+      }
+      // Fallback: OTP step (if backend returns otpId in future)
       _emailOtpId = result.data.otpId || '';
       _emailContact = email;
       showOtpWrap(true);
@@ -164,7 +179,7 @@
     }).catch(function (err) {
       showOtpWrap(false);
       showVerifySection(false);
-      var msg = err.message || 'Could not send code';
+      var msg = err.message || 'Could not create wallet';
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
         msg = 'Network error. Please check your connection and try again.';
       }
