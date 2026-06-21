@@ -2392,6 +2392,13 @@
     }
 
     function _getEthProvider() {
+        // WalletConnect / manual-address logins must NEVER use an injected wallet
+        // (e.g. a desktop MetaMask extension): its account differs from the logged-in
+        // GoodMarket wallet, so UBI claim / send / FV signing fail with "Wrong wallet
+        // connected" / "Invalid URL". Block injected discovery so all flows route
+        // through the WalletConnect signer. LOGIN_METHOD is Jinja-rendered.
+        if (['walletconnect', 'manual', 'manual_address'].includes((LOGIN_METHOD || '').toLowerCase())) return null;
+
         // Re-dispatch EIP-6963 discovery on every call — Trust Wallet mobile
         // and some MetaMask Mobile builds announce only after the dApp asks,
         // and idempotent re-dispatch costs nothing for wallets that don't.
