@@ -593,7 +593,9 @@
 
                 if (result.transactions && result.transactions.length > 0) {
                     let html = '';
-                    result.transactions.slice(0, 5).forEach(tx => {
+                    let hasPending = false;
+                    
+                    result.transactions.slice(0, 10).forEach(tx => {
                         let statusBadge = '';
                         let platformIcon = tx.platform === 'twitter' ? '🐦' : '📱';
                         
@@ -601,32 +603,97 @@
                             statusBadge = '<span class="status status-approved">✅ Approved</span>';
                         } else if (tx.status === 'pending') {
                             statusBadge = '<span class="status status-pending">⏳ Pending</span>';
+                            hasPending = true;
                         } else if (tx.status === 'rejected') {
-                            statusBadge = '<span class="status status-rejected">❌ Rejected</span>';
+                            statusBadge = `<span class="status status-rejected">❌ Rejected</span>
+                                <span style="font-size: 0.7rem; color: rgba(239, 68, 68, 0.8);">${tx.rejection_reason || ''}</span>`;
                         }
                         
+                        const rewardText = tx.status === 'completed' ? `+${tx.reward_amount} G$` : 
+                                          tx.status === 'pending' ? '⏳ Awaiting...' : 
+                                          tx.reward_amount > 0 ? `${tx.reward_amount} G$` : '-';
+                        
                         html += `
-                            <div class="history-item" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+                            <div class="history-item" style="flex-direction: column; align-items: flex-start; gap: 0.25rem; ${tx.status === 'pending' ? 'border-left: 3px solid #fbbf24;' : ''}">
                                 <div style="display: flex; justify-content: space-between; width: 100%;">
                                     <span class="platform">${platformIcon} ${tx.platform === 'twitter' ? 'Twitter' : 'Telegram'}</span>
-                                    <span style="color: ${tx.status === 'completed' ? '#22c55e' : '#f1f5f9'}; font-weight: 700;">
-                                        ${tx.status === 'completed' ? '+' : ''}${tx.reward_amount} G$
+                                    <span style="color: ${tx.status === 'completed' ? '#22c55e' : tx.status === 'pending' ? '#fbbf24' : '#f1f5f9'}; font-weight: 700; font-size: 0.85rem;">
+                                        ${rewardText}
                                     </span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; width: 100%; font-size: 0.75rem;">
-                                    <span style="color: rgba(241,245,249,0.5);">${new Date(tx.created_at).toLocaleDateString()}</span>
+                                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center; gap: 0.5rem;">
+                                    <span style="color: rgba(241,245,249,0.5); font-size: 0.7rem;">${new Date(tx.created_at).toLocaleDateString()}</span>
                                     ${statusBadge}
                                 </div>
                             </div>
                         `;
                     });
                     historyList.innerHTML = html;
+                    
+                    // Auto-refresh if there's a pending submission (to detect approval)
+                    if (hasPending) {
+                        scheduleStatusRefresh();
+                    }
                 } else {
                     historyList.innerHTML = '<p style="text-align: center; color: rgba(241, 245, 249, 0.5); padding: 1rem;">No tasks completed yet</p>';
                 }
             } catch (error) {
                 console.error('Error loading history:', error);
                 document.getElementById('historyList').innerHTML = '<p style="text-align: center; color: rgba(241, 245, 249, 0.5); padding: 1rem;">Could not load history</p>';
+            }
+        }
+        
+        // Auto-refresh for pending submissions (every 10 seconds)
+        let pendingRefreshInterval = null;
+        let refreshAttempts = 0;
+        const MAX_REFRESH_ATTEMPTS = 30; // Stop after 5 minutes
+        
+        function scheduleStatusRefresh() {
+            if (pendingRefreshInterval) return; // Already scheduled
+            
+            pendingRefreshInterval = setInterval(async () => {
+                refreshAttempts++;
+                
+                // Stop refreshing after max attempts
+                if (refreshAttempts > MAX_REFRESH_ATTEMPTS) {
+                    clearInterval(pendingRefreshInterval);
+                    pendingRefreshInterval = null;
+                    refreshAttempts = 0;
+                    return;
+                }
+                
+                // Check status
+                try {
+                    const response = await fetch('/api/daily-task/status');
+                    const status = await response.json();
+                    
+                    // If no longer pending, reload everything
+                    if (!status.has_pending_submission) {
+                        clearInterval(pendingRefreshInterval);
+                        pendingRefreshInterval = null;
+                        refreshAttempts = 0;
+                        
+                        await loadDailyTaskStatus();
+                        await loadDailyTaskHistory();
+                        
+                        // Show notification
+                        if (status.can_claim) {
+                            showNotification('🎉 Task approved! You can claim again!', 'success');
+                        } else if (status.next_claim_time) {
+                            showNotification('✅ Task approved! Cooldown started.', 'success');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Auto-refresh error:', error);
+                }
+            }, 10000); // Check every 10 seconds
+        }
+        
+        function cancelPendingRefresh() {
+            if (pendingRefreshInterval) {
+                clearInterval(pendingRefreshInterval);
+                pendingRefreshInterval = null;
+                refreshAttempts = 0;
             }
         }
 
