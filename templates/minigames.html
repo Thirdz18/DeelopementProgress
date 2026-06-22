@@ -412,7 +412,7 @@
                     const date = w.withdrawal_date || '—';
                     const amount = parseFloat(w.amount || 0).toFixed(2);
                     let txHash = w.tx_hash || '';
-                    // Ensure txHash has 0x prefix
+                    // Ensure txHash has 0x prefix for explorer
                     if (txHash && !txHash.startsWith('0x')) {
                         txHash = '0x' + txHash;
                     }
