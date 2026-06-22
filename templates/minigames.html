@@ -411,7 +411,11 @@
                 list.innerHTML = data.withdrawals.map(w => {
                     const date = w.withdrawal_date || '—';
                     const amount = parseFloat(w.amount || 0).toFixed(2);
-                    const txHash = w.tx_hash || '';
+                    let txHash = w.tx_hash || '';
+                    // Ensure txHash has 0x prefix
+                    if (txHash && !txHash.startsWith('0x')) {
+                        txHash = '0x' + txHash;
+                    }
                     const shortTx = txHash ? txHash.slice(0, 10) + '...' + txHash.slice(-6) : '—';
                     const explorerUrl = txHash ? `https://explorer.celo.org/mainnet/tx/${txHash}` : null;
                     return `
