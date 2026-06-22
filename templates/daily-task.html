@@ -630,9 +630,11 @@
                     });
                     historyList.innerHTML = html;
                     
-                    // Auto-refresh if there's a pending submission (to detect approval)
+                    // Auto-refresh if there's a pending submission
                     if (hasPending) {
                         scheduleStatusRefresh();
+                    } else {
+                        cancelPendingRefresh();
                     }
                 } else {
                     historyList.innerHTML = '<p style="text-align: center; color: rgba(241, 245, 249, 0.5); padding: 1rem;">No tasks completed yet</p>';
@@ -782,6 +784,56 @@
                 modal.style.display = 'none';
             }
         };
+        
+        // Auto-refresh for pending submissions (every 10 seconds)
+        let pendingRefreshInterval = null;
+        let refreshAttempts = 0;
+        const MAX_REFRESH_ATTEMPTS = 30; // Stop after 5 minutes
+        
+        function scheduleStatusRefresh() {
+            if (pendingRefreshInterval) return; // Already scheduled
+            
+            pendingRefreshInterval = setInterval(async () => {
+                refreshAttempts++;
+                
+                if (refreshAttempts > MAX_REFRESH_ATTEMPTS) {
+                    clearInterval(pendingRefreshInterval);
+                    pendingRefreshInterval = null;
+                    refreshAttempts = 0;
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/daily-task/status');
+                    const status = await response.json();
+                    
+                    if (!status.has_pending_submission) {
+                        clearInterval(pendingRefreshInterval);
+                        pendingRefreshInterval = null;
+                        refreshAttempts = 0;
+                        
+                        await loadDailyTaskStatus();
+                        await loadDailyTaskHistory();
+                        
+                        if (status.can_claim) {
+                            showNotification('🎉 Task approved! You can claim again!', 'success');
+                        } else if (status.next_claim_time) {
+                            showNotification('✅ Task approved! Cooldown started.', 'success');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Auto-refresh error:', error);
+                }
+            }, 10000); // Check every 10 seconds
+        }
+        
+        function cancelPendingRefresh() {
+            if (pendingRefreshInterval) {
+                clearInterval(pendingRefreshInterval);
+                pendingRefreshInterval = null;
+                refreshAttempts = 0;
+            }
+        }
 
         function selectPlatform(platform) {
             selectedPlatform = platform;
