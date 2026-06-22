@@ -292,4 +292,3 @@ The script writes the new contract address + ABI to
 - Use a **base domain only** for `TELEGRAM_WEB_APP_URL` / `PRODUCTION_DOMAIN` (do not include `/wallet` path).  
   Example ✅ `https://good-market-community.vercel.app`  
   Example ❌ `https://good-market-community.vercel.app/wallet`
-# PR Branch
