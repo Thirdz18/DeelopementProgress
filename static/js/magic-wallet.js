@@ -30,7 +30,7 @@ async function initMagic() {
     }
 
     // Get API Key from template variable
-    const MAGIC_API_KEY = typeof PRIVY_APP_ID_VAR !== 'undefined' ? PRIVY_APP_ID_VAR : '';
+    const MAGIC_API_KEY = typeof MAGIC_API_KEY_VAR !== 'undefined' ? MAGIC_API_KEY_VAR : '';
 
     if (!MAGIC_API_KEY) {
         container.innerHTML = `
@@ -228,7 +228,7 @@ async function checkMagicLogin() {
 function showMagicSuccess(walletAddress) {
     const container = document.getElementById('privy-embed-container');
     const successContainer = document.getElementById('privySuccessContainer');
-    const addressEl = document.getElementById('privyWalletAddress');
+    const addressEl = document.getElementById('magicWalletAddress');
     
     if (container) container.style.display = 'none';
     

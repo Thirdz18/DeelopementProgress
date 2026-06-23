@@ -1692,7 +1692,7 @@
     </style>
     <!-- WalletConnect bridge for users without injected wallet -->
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
-    <script src="{{ url_for('static', filename='js/privy-wallet.js', v=ASSET_VERSION) }}"></script>
+    <script src="{{ url_for('static', filename='js/magic-wallet.js', v=ASSET_VERSION) }}"></script>
     <script>
         if (typeof GMWalletConnect !== "undefined") {
             GMWalletConnect.configure({
@@ -2303,7 +2303,7 @@
                 <div id="privySuccessContainer" class="privy-success" style="display:none;">
                     <h4>🎉 Wallet Created Successfully!</h4>
                     <p>Your new wallet address:</p>
-                    <div class="wallet-address" id="privyWalletAddress"></div>
+                    <div class="wallet-address" id="magicWalletAddress"></div>
                     <p style="font-size:0.8rem;color:#6b7280;margin-top:0.5rem;">Save this address for reference. You can now claim G$ tokens!</p>
                     <button onclick="continueToClaim()">Continue to GoodMarket →</button>
                 </div>
@@ -2396,12 +2396,12 @@
             detectInjectedWallet();
         }
 
-        // ── Privy Embedded Wallet ──
-        // Privy App ID passed from Flask backend
-        window.PRIVY_APP_ID_VAR = '{{ privy_app_id }}';
-        // Load Privy wallet module
+        // ── Magic.link Embedded Wallet ──
+        // Magic API Key passed from Flask backend
+        window.MAGIC_API_KEY_VAR = '{{ privy_app_id }}';
+        // Load Magic wallet module
         if (typeof showPrivyForm !== 'function') {
-            console.warn('Privy wallet module not loaded');
+            console.warn('Magic wallet module not loaded');
         }
 
         function showWalletStatus(targetId, message, type = 'info') {
