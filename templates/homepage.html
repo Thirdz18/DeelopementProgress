@@ -6,6 +6,9 @@
     <title>GoodMarket - Learn & Earn with Web3</title>
     <!-- Telegram Mini App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Privy SDK for embedded wallets -->
+    <script src="https://unpkg.com/@privy-io/react-auth@1.60.0/dist/embed.production.min.js"></script>
 
     <!-- PWA Meta Tags -->a
     <meta name="theme-color" content="#7c3aed">
@@ -1148,6 +1151,90 @@
             gap: 0.6rem;
         }
 
+        /* Privy Create Wallet Form */
+        .privy-form-container {
+            display: none;
+            padding: 1rem 0;
+        }
+        .privy-form-container.visible {
+            display: block;
+        }
+        .privy-form-info {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: white;
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        .privy-form-info h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .privy-form-info p {
+            font-size: 0.8rem;
+            opacity: 0.9;
+        }
+        #privy-embed-container {
+            min-height: 300px;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .privy-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: #6b7280;
+        }
+        .privy-loading .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #7c3aed;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .privy-success {
+            background: #ecfdf5;
+            border: 1px solid #10b981;
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            margin-top: 1rem;
+        }
+        .privy-success h4 {
+            color: #059669;
+            margin-bottom: 0.5rem;
+        }
+        .privy-success .wallet-address {
+            font-family: monospace;
+            font-size: 0.85rem;
+            background: #f3f4f6;
+            padding: 0.5rem;
+            border-radius: 8px;
+            word-break: break-all;
+            margin: 0.5rem 0;
+        }
+        .privy-success button {
+            background: #7c3aed;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        .privy-success button:hover {
+            background: #6d28d9;
+        }
+
         .wallet-option-card {
             display: flex;
             align-items: center;
@@ -2115,10 +2202,18 @@
 
             <!-- Step 1: Choose login path -->
             <div class="wallet-options" id="walletOptions">
+                <button class="wallet-option-card create-wallet-option" onclick="showPrivyForm()">
+                    <div class="option-icon">✨</div>
+                    <div class="option-text">
+                        <div class="option-title">Create New Wallet</div>
+                        <p class="option-desc">Email, Google, or phone - no setup needed</p>
+                    </div>
+                    <span class="option-arrow">→</span>
+                </button>
                 <button class="wallet-option-card wc-option" onclick="showWalletConnectOptions()">
                     <div class="option-icon">🔗</div>
                     <div class="option-text">
-                        <div class="option-title">Wallet Connect</div>
+                        <div class="option-title">Connect Existing Wallet</div>
                         <p class="option-desc">MetaMask / Trust / MiniPay / WalletConnect</p>
                     </div>
                     <span class="option-arrow">→</span>
@@ -2188,6 +2283,31 @@
                 <div id="walletConnectStatus" class="status-message"></div>
             </div>
 
+            <!-- Step 2B: Privy Create Wallet -->
+            <div class="privy-form-container" id="privyFormContainer">
+                <button class="back-btn" onclick="showWalletOptions()">← Back to login options</button>
+                
+                <div class="privy-form-info">
+                    <h3>✨ Create Your Web3 Wallet</h3>
+                    <p>Sign up with email, Google, or phone number. We'll create a wallet for you automatically - no crypto experience needed!</p>
+                </div>
+                
+                <div id="privy-embed-container">
+                    <div class="privy-loading">
+                        <div class="spinner"></div>
+                        <p>Loading wallet creation...</p>
+                    </div>
+                </div>
+                
+                <div id="privySuccessContainer" class="privy-success" style="display:none;">
+                    <h4>🎉 Wallet Created Successfully!</h4>
+                    <p>Your new wallet address:</p>
+                    <div class="wallet-address" id="privyWalletAddress"></div>
+                    <p style="font-size:0.8rem;color:#6b7280;margin-top:0.5rem;">Save this address for reference. You can now claim G$ tokens!</p>
+                    <button onclick="continueToClaim()">Continue to GoodMarket →</button>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -2247,7 +2367,7 @@
 
         function showWalletOptions() {
             document.getElementById('walletOptions').style.display = 'flex';
-            ['walletConnectOptions', 'googleLoginOptions'].forEach(id => {
+            ['walletConnectOptions', 'googleLoginOptions', 'privyFormContainer'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.remove('visible');
             });
@@ -2255,13 +2375,11 @@
         }
 
         function showCreateWalletOptions() {
-            document.getElementById('walletOptions').style.display = 'none';
-            const f = document.getElementById('googleLoginOptions');
-            if (f) f.classList.add('visible');
+            showPrivyForm();
         }
 
         function showGoogleLoginOptions() {
-            showCreateWalletOptions();
+            showPrivyForm();
         }
 
         function showWalletConnectOptions() {
@@ -2277,6 +2395,115 @@
             detectInjectedWallet();
         }
 
+        // ── Privy Embedded Wallet ──
+        let privyProvider = null;
+        let privyEmbeddedWallet = null;
+
+        function showPrivyForm() {
+            document.getElementById('walletOptions').style.display = 'none';
+            document.getElementById('privyFormContainer').classList.add('visible');
+            document.getElementById('privySuccessContainer').style.display = 'none';
+            initPrivy();
+        }
+
+        function initPrivy() {
+            // Check if already initialized
+            if (window.PrivyFirstWalletProvider || privyProvider) {
+                console.log('Privy already initialized');
+                return;
+            }
+
+            const container = document.getElementById('privy-embed-container');
+            if (!container) return;
+
+            // Privy app ID - users need to replace this with their own from privy.io
+            const PRIVY_APP_ID = '{{ privy_app_id }}';
+
+            if (!PRIVY_APP_ID || PRIVY_APP_ID === '') {
+                container.innerHTML = `
+                    <div style="padding: 2rem; text-align: center; color: #6b7280;">
+                        <p style="margin-bottom: 1rem;">⚠️ Privy App ID not configured</p>
+                        <p style="font-size: 0.85rem;">Please set the PRIVY_APP_ID environment variable to enable wallet creation.</p>
+                        <p style="font-size: 0.75rem; margin-top: 1rem;">Get your App ID at <a href="https://privy.io" target="_blank" style="color: #7c3aed;">privy.io</a></p>
+                    </div>
+                `;
+                return;
+            }
+
+            try {
+                // Initialize Privy embed
+                window.PrivyFirstWalletProvider.initEmbedded(PRIVY_APP_ID, {
+                    container: container,
+                    embeddedWallets: {
+                        showWidget: true,
+                        createOnDemand: true,
+                        requireUserOwnership: true,
+                    },
+                    appearance: {
+                        theme: 'light',
+                        accentColor: '#7c3aed',
+                        logo: 'https://goodmarket.live/static/icons/goodmarket-icon.png',
+                    },
+                }).then((result) => {
+                    if (result && result.provider) {
+                        privyProvider = result.provider;
+                        privyEmbeddedWallet = result;
+                        console.log('✅ Privy embedded wallet initialized');
+                        setupPrivyCallbacks();
+                    }
+                }).catch((error) => {
+                    console.error('❌ Privy init error:', error);
+                    container.innerHTML = `
+                        <div style="padding: 2rem; text-align: center; color: #ef4444;">
+                            <p>Failed to initialize wallet creator. Please try again.</p>
+                        </div>
+                    `;
+                });
+            } catch (error) {
+                console.error('Privy error:', error);
+                container.innerHTML = `
+                    <div style="padding: 2rem; text-align: center; color: #6b7280;">
+                        <p>Error loading wallet creator. Please refresh the page.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function setupPrivyCallbacks() {
+            // Listen for wallet creation success
+            if (window.PrivyFirstWalletProvider) {
+                window.PrivyFirstWalletProvider.on('createWallet', async (wallet) => {
+                    console.log('🎉 New wallet created:', wallet);
+                    showPrivySuccess(wallet.address);
+                });
+
+                window.PrivyFirstWalletProvider.on('linked', async (wallet) => {
+                    console.log('🔗 Existing wallet linked:', wallet);
+                    showPrivySuccess(wallet.address);
+                });
+            }
+        }
+
+        function showPrivySuccess(walletAddress) {
+            const successContainer = document.getElementById('privySuccessContainer');
+            const addressEl = document.getElementById('privyWalletAddress');
+            
+            if (successContainer && addressEl) {
+                addressEl.textContent = walletAddress;
+                successContainer.style.display = 'block';
+                
+                // Store wallet info for session
+                sessionStorage.setItem('privy_wallet_address', walletAddress);
+            }
+        }
+
+        function continueToClaim() {
+            const walletAddress = sessionStorage.getItem('privy_wallet_address');
+            if (walletAddress) {
+                // Redirect to claim page or trigger login flow
+                window.location.href = '/claim?wallet=' + walletAddress + '&method=privy';
+            }
+        }
 
         function showWalletStatus(targetId, message, type = 'info') {
             const el = document.getElementById(targetId);
