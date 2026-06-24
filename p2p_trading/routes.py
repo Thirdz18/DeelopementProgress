@@ -1090,6 +1090,18 @@ def init_p2p_trading(app) -> None:
     import os
 
     app.register_blueprint(p2p_bp, url_prefix="/p2p")
+    
+    # Always try to backfill stuck ads on startup (no env var needed)
+    try:
+        from .escrow_service import escrow_service
+        updated = escrow_service.backfill_stuck_ads()
+        if updated > 0:
+            logger.info(f"✅ Backfill complete: {updated} stuck ads updated to 'open'")
+        else:
+            logger.info("No stuck ads found to backfill")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("⚠️ Backfill on startup failed (non-critical): %s", exc)
+    
     if os.getenv("P2P_INDEXER_ENABLED", "").lower() in ("1", "true", "yes"):
         try:
             get_indexer().start()
@@ -1099,6 +1111,5 @@ def init_p2p_trading(app) -> None:
     else:
         logger.warning(
             "⚠️ P2P Escrow Indexer is DISABLED. "
-            "Set P2P_INDEXER_ENABLED=true to enable automatic ad status updates. "
-            "Without the indexer, ads will be stuck at 'submitted' status after signing."
+            "Set P2P_INDEXER_ENABLED=true to enable automatic ad status updates."
         )
