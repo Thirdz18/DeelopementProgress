@@ -1031,6 +1031,34 @@ def api_indexer_poll():
     )
 
 
+@p2p_bp.route("/api/indexer/backfill", methods=["POST"])
+@admin_required
+def api_indexer_backfill():
+    """Manually backfill stuck ads that are stuck at 'submitted' status.
+    
+    This fixes ads where:
+    - The on-chain transaction was successful (AdOpened event was emitted)
+    - But the indexer never ran to update the DB row to 'open'
+    
+    It queries the blockchain directly and updates the DB accordingly.
+    """
+    try:
+        from .escrow_service import escrow_service
+        
+        updated_count = escrow_service.backfill_stuck_ads()
+        return jsonify({
+            "success": True,
+            "message": f"Backfilled {updated_count} stuck ads",
+            "updated_count": updated_count,
+        })
+    except Exception as exc:
+        logger.exception("Backfill failed: %s", exc)
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
 @p2p_bp.route("/api/indexer/state")
 @admin_required
 def api_indexer_state():
@@ -1065,5 +1093,12 @@ def init_p2p_trading(app) -> None:
     if os.getenv("P2P_INDEXER_ENABLED", "").lower() in ("1", "true", "yes"):
         try:
             get_indexer().start()
+            logger.info("✅ P2P Escrow Indexer started (P2P_INDEXER_ENABLED=true)")
         except Exception as exc:  # noqa: BLE001
             logger.exception("Failed to start P2P escrow indexer: %s", exc)
+    else:
+        logger.warning(
+            "⚠️ P2P Escrow Indexer is DISABLED. "
+            "Set P2P_INDEXER_ENABLED=true to enable automatic ad status updates. "
+            "Without the indexer, ads will be stuck at 'submitted' status after signing."
+        )
