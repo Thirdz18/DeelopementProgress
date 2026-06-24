@@ -34,9 +34,7 @@ WHERE t.onchain_status = 'pending_user_signature'
 -- STEP 3: ACTUALLY FIX THEM (trades with tx hash)
 -- Update trades that have place_order_tx but stuck at pending_user_signature
 UPDATE public.p2p_trades
-SET 
-    onchain_status = 'payment_pending',
-    updated_at = NOW()
+SET onchain_status = 'payment_pending'
 WHERE onchain_status = 'pending_user_signature'
   AND place_order_tx IS NOT NULL;
 
@@ -45,11 +43,10 @@ WHERE onchain_status = 'pending_user_signature'
 UPDATE public.p2p_trades
 SET 
     onchain_status = 'cancelled',
-    closed_at = NOW(),
-    updated_at = NOW()
+    cancelled_at = NOW()
 WHERE onchain_status = 'pending_user_signature'
   AND place_order_tx IS NULL
-  AND created_at < NOW() - INTERVAL '1 hour';  -- Only old stuck trades
+  AND created_at < NOW() - INTERVAL '1 hour';
 
 -- STEP 5: Verify the fix
 SELECT 
