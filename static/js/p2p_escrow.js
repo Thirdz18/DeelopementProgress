@@ -375,11 +375,30 @@
       "/p2p/api/trades/" + encodeURIComponent(tradeId) + "/prepare-dispute"
     );
   }
-  function closeAd(orderId) {
-    return _signTradeAction(
-      orderId,
-      "/p2p/api/ads/" + encodeURIComponent(orderId) + "/prepare-close"
-    );
+  async function closeAd(orderId) {
+    const prep = await jsonPost("/p2p/api/ads/" + encodeURIComponent(orderId) + "/prepare-close");
+    
+    if (!prep.success) {
+      throw new Error(prep.error || "Transaction preparation failed");
+    }
+    
+    const tx = (prep.transactions || {}).close_ad;
+    if (!tx) {
+      throw new Error("No close_ad transaction in response");
+    }
+    
+    const txHash = await sendPreparedTx(tx);
+    
+    // Wait for the transaction to be mined and confirmed
+    // This ensures the closeAd was actually successful on-chain
+    const receipt = await waitForReceipt(txHash, { timeoutMs: 120000 });
+    
+    // Report submitted - now we know the tx was successful
+    reportSubmitted("close_ad", orderId, txHash).catch(err => {
+      console.warn("reportSubmitted (close_ad) failed (non-critical):", err);
+    });
+    
+    return { txHash, receipt };
   }
 
   // ----- Read helpers -----

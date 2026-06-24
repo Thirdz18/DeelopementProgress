@@ -977,7 +977,7 @@ def api_tx_submitted():
     kind = body.get("kind")
     identifier = body.get("identifier")
     tx_hash = body.get("tx_hash")
-    if kind not in ("ad", "trade") or not identifier or not tx_hash:
+    if kind not in ("ad", "trade", "close_ad") or not identifier or not tx_hash:
         return jsonify(
             {"success": False, "error": "kind, identifier, tx_hash required"}
         ), 400

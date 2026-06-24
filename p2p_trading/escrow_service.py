@@ -757,10 +757,45 @@ class P2PEscrowService:
                 ).execute()
             except Exception as exc:  # noqa: BLE001
                 return {"success": False, "error": str(exc)}
+        elif kind == "close_ad":
+            order = self._fetch_order(identifier)
+            if not order:
+                return {"success": False, "error": "Order not found"}
+            if (order.get("seller_wallet") or "").lower() != actor:
+                return {"success": False, "error": "Not your ad"}
+            
+            # close_ad is recorded when seller submits the closeAd tx
+            # The ad should be "open" when this is called, but we handle cases
+            # where the indexer already updated it or the update condition doesn't match
+            ad_id_hex = order.get("ad_id_onchain")
+            db = self.admin or self.supabase
+            
+            current_status = (order.get("onchain_status") or "").lower()
+            
+            # If already closed (by indexer), just record the tx and return success
+            if current_status == "closed":
+                try:
+                    db.table("p2p_orders").update(
+                        {"ad_close_tx": tx_hash}
+                    ).eq("order_id", identifier).execute()
+                except Exception:
+                    pass  # Best effort
+                return {"success": True, "skipped": True, "reason": "Already closed"}
+            
+            try:
+                db.table("p2p_orders").update(
+                    {
+                        "ad_close_tx": tx_hash,
+                        "onchain_status": "closed",
+                        "closed_at": _utcnow_iso(),
+                    }
+                ).eq("order_id", identifier).eq("onchain_status", "open").execute()
+            except Exception as exc:  # noqa: BLE001
+                return {"success": False, "error": str(exc)}
         else:
             return {"success": False, "error": f"Unknown kind: {kind}"}
         self._log_action(
-            order_id=identifier if kind == "ad" else None,
+            order_id=identifier if kind in ("ad", "close_ad") else None,
             trade_id=identifier if kind == "trade" else None,
             actor=actor_wallet,
             action=f"{kind}_tx_submitted",
