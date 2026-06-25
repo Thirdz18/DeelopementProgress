@@ -231,6 +231,8 @@ class GamesRewardsContractService:
                 SERVER_PRIVATE_KEY = '0x' + SERVER_PRIVATE_KEY
             self.server_account = self.w3.eth.account.from_key(SERVER_PRIVATE_KEY)
             self.server_address = self.server_account.address
+            # Store the cleaned key for signing (Account.key is bytes, not hex string)
+            self._server_key = SERVER_PRIVATE_KEY
         else:
             self.server_account = None
             self.server_address = None
@@ -312,7 +314,7 @@ class GamesRewardsContractService:
                 'chainId': CHAIN_ID
             })
             
-            signed = self.w3.eth.account.sign_transaction(txn, private_key=self.server_account.key)
+            signed = self.w3.eth.account.sign_transaction(txn, private_key=self._server_key)
             
             # Send transaction
             logger.info("📡 Sending contract transaction...")
