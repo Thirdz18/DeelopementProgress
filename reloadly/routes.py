@@ -26,10 +26,20 @@ def _require_auth():
 
 @reloadly_bp.route("/")
 def reloadly_home():
+    import os
     wallet, verified = _require_auth()
     if not wallet or not verified:
         return redirect("/")
-    import os
+    
+    merchant_address = os.getenv("MERCHANT_ADDRESS", "")
+    if not merchant_address or not merchant_address.startswith("0x") or len(merchant_address) != 42:
+        logger.error("❌ Reloadly blocked: MERCHANT_ADDRESS not configured or invalid")
+        return render_template(
+            "feature_unavailable.html",
+            feature_name="Reloadly",
+            message="Reloadly payment service is temporarily unavailable. Please contact support."
+        ), 503
+    
     gd_price = get_gd_usd_price()
     has_explicit_sidecar = bool(os.getenv("WC_SERVICE_URL"))
     is_serverless_runtime = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
@@ -39,7 +49,7 @@ def reloadly_home():
         wallet=wallet,
         gd_price=gd_price,
         is_sandbox=reloadly_client.is_sandbox,
-        merchant_address=os.getenv("MERCHANT_ADDRESS", ""),
+        merchant_address=merchant_address,
         gd_contract=os.getenv("GOODDOLLAR_CONTRACT", "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A"),
         walletconnect_project_id=os.getenv("WALLETCONNECT_PROJECT_ID", ""),
         walletconnect_sidecar_enabled=wc_sidecar,

@@ -611,6 +611,15 @@
 let GD_PRICE = {{ gd_price }};
 const MERCHANT_ADDRESS = "{{ merchant_address }}";
 const GD_CONTRACT = "{{ gd_contract }}";
+
+// Block reloadly entirely if MERCHANT_ADDRESS is not configured
+if (!MERCHANT_ADDRESS || !/^0x[0-9a-fA-F]{40}$/.test(MERCHANT_ADDRESS)) {
+    document.addEventListener('DOMContentLoaded', function() {
+        var msg = 'Reloadly is temporarily unavailable (merchant address not configured). Please contact support.';
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;text-align:center;padding:20px"><div><h2 style="color:#ef4444">⚠️ Configuration Error</h2><p>' + msg + '</p></div></div>';
+    });
+    throw new Error('MERCHANT_ADDRESS not configured');
+}
 const GD_DECIMALS = 18;
 const CELO_CHAIN_ID = 42220;
 const WC_PROJECT_ID = "{{ walletconnect_project_id }}";
