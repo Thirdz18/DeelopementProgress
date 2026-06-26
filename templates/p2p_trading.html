@@ -138,26 +138,26 @@
   <div data-pane="sell" hidden>
     <div class="panel">
       <h2>Create a sell offer</h2>
-      <p class="small">You will be asked to sign two transactions: an ERC-20 approval, then the on-chain <code>openAd</code> call. The full G$ amount is locked in the escrow contract until the ad is closed or fully traded.</p>
-      <div class="hint">Minimum ad &amp; per-trade size is <strong>20,000 G$</strong> (contract constant <code>MIN_AD_AMOUNT</code>).</div>
+      <p class="small">You will be asked to sign two transactions: an ERC-20 approval, then the on-chain <code>openAd</code> call. The full G$ amount is locked in the escrow contract until refunded or fully traded.</p>
+      <div class="hint">Minimum deposit: <strong>1,000 G$</strong>. Minimum order: <strong>1,000 G$</strong>. Flexible max order size.</div>
       <form id="sellForm">
         <div class="row" style="gap:1rem;">
           <div class="form-row" style="flex:1;">
             <label>Total G$ to lock</label>
-            <input type="number" min="20000" step="0.01" required name="total_g_dollar" placeholder="e.g. 50000">
+            <input type="number" min="1000" step="1000" required name="total_g_dollar" placeholder="e.g. 5000">
           </div>
           <div class="form-row" style="flex:1;">
-            <label>Min per trade (G$)</label>
-            <input type="number" min="20000" step="0.01" required name="min_order_g_dollar" placeholder="e.g. 20000">
+            <label>Min per order (G$)</label>
+            <input type="number" min="1000" step="1000" required name="min_order_g_dollar" placeholder="e.g. 1000">
           </div>
           <div class="form-row" style="flex:1;">
-            <label>Max per trade (G$)</label>
-            <input type="number" min="20000" step="0.01" required name="max_order_g_dollar" placeholder="e.g. 50000">
+            <label>Max per order (G$)</label>
+            <input type="number" min="1000" step="1000" required name="max_order_g_dollar" placeholder="e.g. 5000">
           </div>
         </div>
         <div class="row" style="gap:1rem;">
           <div class="form-row" style="flex:1;">
-            <label>Total fiat asking price</label>
+            <label>Total fiat asking price (for all G$)</label>
             <input type="number" min="0" step="0.01" required name="fiat_amount" placeholder="e.g. 5000">
           </div>
           <div class="form-row" style="flex:1;">
@@ -691,6 +691,8 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
     const remaining = Number(ad.remaining_amount_gd || 0);
     const total = Number(ad.total_locked_gd || 0);
     const rate = Number(ad.rate || 0);
+    const minOrder = Number(ad.min_order_gd || 1000);
+    const maxOrder = Number(ad.max_order_gd || 0);
     const seller = (ad.seller_wallet || '').toLowerCase();
     return `
       <div class="card">
@@ -700,7 +702,7 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
         </div>
         <div class="meta">${ad.payment_method || ''} · ${ad.fiat_currency || ''}${rate ? ' · ' + rate.toFixed(4) + ' ' + (ad.fiat_currency||'') + '/G$' : ''}</div>
         <div class="meta">Seller: <code>${shortAddr(seller)}</code></div>
-        <div class="meta">Range: ${fmt(ad.min_order_gd)} – ${fmt(ad.max_order_gd)} G$ · Locked: ${fmt(total)} G$</div>
+        <div class="meta">Order range: ${fmt(minOrder)} – ${fmt(maxOrder)} G$ · Locked: ${fmt(total)} G$</div>
         ${ad.description ? `<div class="small">${escapeHtml(ad.description)}</div>` : ''}
         <div class="row" style="justify-content:flex-end;">
           <button class="primary" data-buy="${ad.order_id}">Buy</button>
@@ -751,6 +753,10 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
     const fd = new FormData(e.target);
     const inputs = {};
     fd.forEach((v, k) => { inputs[k] = ['total_g_dollar','min_order_g_dollar','max_order_g_dollar','fiat_amount'].includes(k) ? Number(v) : v; });
+    // Validate min/max
+    if (inputs.min_order_g_dollar < 1000) return toast('Minimum order is 1,000 G$', 'error');
+    if (inputs.max_order_g_dollar < inputs.min_order_g_dollar) return toast('Max order must be >= min order', 'error');
+    if (inputs.max_order_g_dollar > inputs.total_g_dollar) return toast('Max order must be <= total', 'error');
     btn.disabled = true; btn.textContent = 'Awaiting wallet…';
     try {
       const { order, txHashes } = await window.P2PEscrow.openAd(inputs);
@@ -774,13 +780,21 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
 
   function openPlaceOrderModal(orderId, ad) {
     _activePlaceOrder = { orderId, ad };
+    const rate = Number(ad.rate || 0);
+    const minOrder = Number(ad.min_order_gd || 1000);
+    const maxOrder = Number(ad.max_order_gd || 999999);
     placeOrderInfo.innerHTML = `
       <div class="key-val"><span class="k">Seller</span><span class="v">${shortAddr(ad.seller_wallet)}</span></div>
       <div class="key-val"><span class="k">Available</span><span class="v">${fmt(ad.remaining_amount_gd)} G$</span></div>
-      <div class="key-val"><span class="k">Range</span><span class="v">${fmt(ad.min_order_gd)} – ${fmt(ad.max_order_gd)} G$</span></div>
-      <div class="key-val"><span class="k">Rate</span><span class="v">${(Number(ad.rate)||0).toFixed(4)} ${ad.fiat_currency}/G$</span></div>
-      <div class="key-val"><span class="k">Method</span><span class="v">${ad.payment_method}</span></div>`;
-    placeOrderAmount.value = ad.min_order_gd;
+      <div class="key-val"><span class="k">Order range</span><span class="v">${fmt(minOrder)} – ${fmt(maxOrder)} G$</span></div>
+      <div class="key-val"><span class="k">Rate</span><span class="v">${rate.toFixed(4)} ${ad.fiat_currency}/G$</span></div>
+      <div class="key-val"><span class="k">Method</span><span class="v">${ad.payment_method}</span></div>
+      <div class="key-val"><span class="k">Payment details</span><span class="v">${escapeHtml(ad.payment_details || '')}</span></div>`;
+    // Set amount input constraints
+    placeOrderAmount.min = minOrder;
+    placeOrderAmount.max = Math.min(maxOrder, ad.remaining_amount_gd);
+    placeOrderAmount.placeholder = `Min: ${fmt(minOrder)}, Max: ${fmt(maxOrder)}`;
+    placeOrderAmount.value = minOrder;
     placeOrderModal.classList.add('open');
   }
   document.getElementById('placeOrderCancel').addEventListener('click', () => placeOrderModal.classList.remove('open'));
@@ -793,8 +807,8 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
     const btn = document.getElementById('placeOrderSubmit');
     btn.disabled = true; btn.textContent = 'Awaiting wallet…';
     try {
-      const { trade, txHash } = await window.P2PEscrow.placeOrder(_activePlaceOrder.orderId, amount, minutes * 60);
-      toast(`Order placed (${txHash.slice(0,10)}…). Pay the seller off-chain, then upload proof and mark paid.`, 'success');
+      const { trade, txHash, order_amount_gd, fiat_amount } = await window.P2PEscrow.placeOrder(_activePlaceOrder.orderId, amount, minutes * 60);
+      toast(`Order placed: ${order_amount_gd || amount} G$ for ${fiat_amount || '—'} (${txHash.slice(0,10)}…). Pay the seller off-chain, then upload proof and mark paid.`, 'success');
       placeOrderModal.classList.remove('open');
       document.querySelector('[data-tab="myTrades"]').click();
     } catch (err) { toastErr(err); }
@@ -1018,15 +1032,19 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
   const myAdsGrid = document.getElementById('myAdsGrid');
   function myAdCard(ad) {
     const stat = (ad.onchain_status || 'pending').toLowerCase();
-    const canClose = stat === 'open' && (Number(ad.active_trade_count) || 0) === 0;
+    const remaining = Number(ad.remaining_amount_gd || 0);
+    const total = Number(ad.total_locked_gd || 0);
+    const minOrder = Number(ad.min_order_gd || 1000);
+    const maxOrder = Number(ad.max_order_gd || 0);
+    const canRefund = stat === 'open' && (Number(ad.active_trade_count) || 0) === 0 && remaining >= minOrder;
     return `<div class="card">
-      <div class="row between"><h3>${fmt(ad.remaining_amount_gd)} G$ left</h3><span class="badge ${stat}">${stat}</span></div>
+      <div class="row between"><h3>${fmt(remaining)} G$ left</h3><span class="badge ${stat}">${stat}</span></div>
       <div class="meta">${ad.payment_method || ''} · ${ad.fiat_currency || ''}</div>
-      <div class="meta">Active trades: ${ad.active_trade_count || 0} · Locked: ${fmt(ad.total_locked_gd)} G$</div>
+      <div class="meta">Order range: ${fmt(minOrder)} – ${fmt(maxOrder)} G$ · Active: ${ad.active_trade_count || 0} · Total: ${fmt(total)} G$</div>
       ${ad.ad_open_tx ? `<div class="small"><a href="${txLink(ad.ad_open_tx)}" target="_blank">openAd tx</a></div>` : ''}
-      ${ad.ad_close_tx ? `<div class="small"><a href="${txLink(ad.ad_close_tx)}" target="_blank">closeAd tx</a></div>` : ''}
+      ${ad.ad_refund_tx ? `<div class="small"><a href="${txLink(ad.ad_refund_tx)}" target="_blank">refundAd tx</a></div>` : ''}
       <div class="row" style="justify-content:flex-end;">
-        ${canClose ? `<button class="danger" data-close="${ad.order_id}">Close ad &amp; refund</button>` : ''}
+        ${canRefund ? `<button class="danger" data-refund="${ad.order_id}">Refund remaining G$</button>` : ''}
       </div>
     </div>`;
   }
@@ -1036,11 +1054,11 @@ if (window.P2PEscrow && typeof window.P2PEscrow.configure === "function") {
       const data = await window.P2PEscrow.myAds();
       if (!data.ads.length) { myAdsGrid.innerHTML = '<div class="empty">You have not published any ads.</div>'; return; }
       myAdsGrid.innerHTML = data.ads.map(myAdCard).join('');
-      myAdsGrid.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', async () => {
+      myAdsGrid.querySelectorAll('[data-refund]').forEach(b => b.addEventListener('click', async () => {
         b.disabled = true;
         try {
-          const { txHash } = await window.P2PEscrow.closeAd(b.dataset.close);
-          toast(`closeAd submitted (${txHash.slice(0,10)}…)`, 'success');
+          const { txHash } = await window.P2PEscrow.refundAd(b.dataset.refund);
+          toast(`refundAd submitted (${txHash.slice(0,10)}…)`, 'success');
           setTimeout(refreshMyAds, 18000);
         } catch (e) { toastErr(e); b.disabled = false; }
       }));
