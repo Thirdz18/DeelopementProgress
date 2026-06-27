@@ -423,12 +423,19 @@ class ReferralService:
             op="claim pending referral — atomic update to disbursing"
         )
 
+        logger.info(f"🔍 CLAIM DEBUG: update_result={update_result}, type={type(update_result)}")
+        if update_result:
+            logger.info(f"🔍 CLAIM DEBUG: update_result attrs={dir(update_result)}")
+            logger.info(f"🔍 CLAIM DEBUG: update_result.count={getattr(update_result, 'count', 'NO_ATTR')}")
+            logger.info(f"🔍 CLAIM DEBUG: update_result.data={getattr(update_result, 'data', 'NO_ATTR')}")
+
         # BUG FIX: Supabase UPDATE returns data=[] even on success
         # Use update_result.count to check if rows were actually updated
         # Note: getattr returns the actual value, not default, if attribute exists
         update_count = getattr(update_result, 'count', None)
         if update_count is None:
             update_count = 0
+            logger.info(f"⚠️ CLAIM: update_count was None, set to 0")
         if update_count > 0:
             logger.info(f"✅ Claimed pending referral id={row_id} for disbursement (referee={referee_wallet[:8]}...)")
             return {"claimed": True, "referral": row}
