@@ -8,18 +8,71 @@ let magic = null;
 let magicWalletAddress = null;
 let pendingEmail = null;
 let magicLoadAttempts = 0;
+let magicSdkLoadPromise = null;
 const MAX_LOAD_ATTEMPTS = 10;
+const MAGIC_SDK_SRC = 'https://cdn.jsdelivr.net/npm/magic-sdk@10.0.0/dist/magic.js';
 
 /**
  * Initialize and show the Magic wallet creation form
  */
 function showPrivyForm() {
-    document.getElementById('walletOptions').style.display = 'none';
-    document.getElementById('privyFormContainer').classList.add('visible');
-    document.getElementById('privySuccessContainer').style.display = 'none';
-    document.getElementById('privy-embed-container').style.display = 'block';
+    const walletOptions = document.getElementById('walletOptions');
+    const formContainer = document.getElementById('privyFormContainer');
+    const successContainer = document.getElementById('privySuccessContainer');
+    const embedContainer = document.getElementById('privy-embed-container');
+
+    if (walletOptions) walletOptions.style.display = 'none';
+    if (formContainer) formContainer.classList.add('visible');
+    if (successContainer) successContainer.style.display = 'none';
+    if (embedContainer) embedContainer.style.display = 'block';
     magicLoadAttempts = 0;
     initMagic();
+}
+
+
+/**
+ * Load Magic SDK on demand. The homepage also includes the CDN script in the
+ * head, but loading it here makes wallet creation resilient to script ordering,
+ * slow networks, and older cached homepage HTML.
+ */
+function loadMagicSdk() {
+    if (typeof Magic !== 'undefined') {
+        return Promise.resolve();
+    }
+
+    if (magicSdkLoadPromise) {
+        return magicSdkLoadPromise;
+    }
+
+    magicSdkLoadPromise = new Promise((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Magic SDK load timed out')), 5000);
+        const finish = () => {
+            window.clearTimeout(timeout);
+            resolve();
+        };
+        const fail = () => {
+            window.clearTimeout(timeout);
+            reject(new Error('Magic SDK failed to load'));
+        };
+        const existingScript = document.querySelector(`script[src="${MAGIC_SDK_SRC}"]`);
+        if (existingScript) {
+            existingScript.addEventListener('load', finish, { once: true });
+            existingScript.addEventListener('error', fail, { once: true });
+            // If the head script already finished before this handler was added,
+            // do not wait forever. The retry loop below will surface the error.
+            window.setTimeout(finish, 0);
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = MAGIC_SDK_SRC;
+        script.async = true;
+        script.onload = finish;
+        script.onerror = fail;
+        document.head.appendChild(script);
+    });
+
+    return magicSdkLoadPromise;
 }
 
 /**
@@ -33,7 +86,7 @@ async function initMagic() {
     }
 
     // Get API Key from template variable
-    const MAGIC_API_KEY = typeof MAGIC_API_KEY_VAR !== 'undefined' ? MAGIC_API_KEY_VAR : '';
+    const MAGIC_API_KEY = typeof window.MAGIC_API_KEY_VAR !== 'undefined' ? window.MAGIC_API_KEY_VAR : '';
 
     console.log('Magic init called, API KEY present:', !!MAGIC_API_KEY, 'Value:', MAGIC_API_KEY);
 
@@ -49,27 +102,13 @@ async function initMagic() {
     }
 
     try {
-        // Check if Magic SDK is loaded
+        // Check if Magic SDK is loaded. If it is still loading or was blocked on
+        // the first page render, load it on demand instead of leaving the static
+        // "Loading wallet creation..." placeholder visible forever.
         if (typeof Magic === 'undefined') {
             magicLoadAttempts++;
             console.log('Magic SDK not loaded yet, attempt:', magicLoadAttempts);
-            
-            if (magicLoadAttempts >= MAX_LOAD_ATTEMPTS) {
-                container.innerHTML = `
-                    <div style="padding: 2rem; text-align: center; color: #ef4444;">
-                        <p style="margin-bottom: 1rem;">❌ Failed to load Magic SDK</p>
-                        <p style="font-size: 0.85rem; color: #6b7280;">
-                            The Magic SDK could not be loaded. Please check your internet connection<br>
-                            or try refreshing the page.
-                        </p>
-                        <p style="font-size: 0.75rem; color: #9ca3af; margin-top: 1rem;">
-                            Troubleshooting: Make sure the CDN URL is accessible
-                        </p>
-                    </div>
-                `;
-                return;
-            }
-            
+
             container.innerHTML = `
                 <div style="padding: 2rem; text-align: center; color: #6b7280;">
                     <div class="spinner" style="width: 24px; height: 24px; border: 3px solid #e5e7eb; border-top: 3px solid #35d07f; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
@@ -77,8 +116,33 @@ async function initMagic() {
                 </div>
                 <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
             `;
-            setTimeout(() => initMagic(), 500);
-            return;
+
+            try {
+                await loadMagicSdk();
+            } catch (sdkError) {
+                console.error('Magic SDK load failed:', sdkError);
+            }
+
+            if (typeof Magic === 'undefined') {
+                if (magicLoadAttempts >= MAX_LOAD_ATTEMPTS) {
+                    container.innerHTML = `
+                        <div style="padding: 2rem; text-align: center; color: #ef4444;">
+                            <p style="margin-bottom: 1rem;">❌ Failed to load Magic SDK</p>
+                            <p style="font-size: 0.85rem; color: #6b7280;">
+                                The Magic SDK could not be loaded. Please check your internet connection<br>
+                                or try refreshing the page.
+                            </p>
+                            <p style="font-size: 0.75rem; color: #9ca3af; margin-top: 1rem;">
+                                Troubleshooting: Make sure the CDN URL is accessible
+                            </p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                setTimeout(() => initMagic(), 500);
+                return;
+            }
         }
 
         console.log('Magic SDK loaded, initializing with API key...');
@@ -315,3 +379,11 @@ async function magicLogout() {
         sessionStorage.removeItem('magic_wallet_created');
     }
 }
+
+// Explicitly expose handlers for inline onclick attributes and cached pages.
+window.showPrivyForm = showPrivyForm;
+window.checkMagicLogin = checkMagicLogin;
+window.continueToClaim = continueToClaim;
+window.getMagicProvider = getMagicProvider;
+window.hasMagicWallet = hasMagicWallet;
+window.magicLogout = magicLogout;
