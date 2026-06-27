@@ -2615,17 +2615,21 @@ def admin_approve_referral():
 
         # Step 1: Mark as onchain_verified with admin info
         now = datetime.now(timezone.utc).isoformat()
-        supabase.table("referrals").update({
+        update_result = supabase.table("referrals").update({
             "onchain_verified": True,
             "admin_verified_at": now,
             "approved_by_wallet": admin_wallet,
             "approved_by_ip": admin_ip
         }).eq("id", row.get("id")).execute()
+        
+        logger.info(f"🔍 APPROVE DEBUG: onchain_verified update result - count={getattr(update_result, 'count', 'N/A')}, data={getattr(update_result, 'data', 'N/A')}")
 
         logger.info(f"✅ Admin {admin_wallet[:8]}... approved referral {referral_code} | referee={referee_wallet[:8]}...")
 
         # Step 2: Claim for disbursement
+        logger.info(f"🔍 APPROVE DEBUG: About to claim referral {referral_code} for wallet {referee_wallet[:8]}...")
         claim = referral_service.claim_pending_referral_for_disbursement(referee_wallet)
+        logger.info(f"🔍 APPROVE DEBUG: Claim result = {claim}")
         if not claim.get("claimed"):
             return jsonify({
                 "success": False,
