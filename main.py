@@ -680,6 +680,14 @@ try:
 except Exception as e:
     logger.error(f"❌ Learn & Earn stream scheduler initialization failed: {e}")
 
+# Initialize trustless P2P Trading (GoodMarketP2PEscrow contract)
+logger.info("🤝 Initializing P2P Trading system...")
+try:
+    from p2p_trading import init_p2p_trading
+    init_p2p_trading(app)
+    logger.info("✅ P2P Trading system initialized")
+except Exception as e:
+    logger.error(f"❌ P2P Trading initialization failed: {e}")
 
 # Initialize GoodMarket claim reconciler (opt-in via
 # GOODMARKET_CLAIM_RECONCILER_ENABLED). The reconciler is the server-side
@@ -741,6 +749,7 @@ def api_status():
             "/api/analytics",
             "/api/gooddollar-balance",
             "/api/forum/posts",
+            "/api/p2p/history",
             "/api/learn-earn/history"
         ]
     })

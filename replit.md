@@ -28,6 +28,7 @@ A Web3 Learn & Earn platform built on the GoodDollar ecosystem. Users earn G$ to
 - `learn_and_earn/` — Learn & Earn quiz module
 - `minigames/` — Minigames module
 - `savings/` — G$ Savings module
+- `p2p_trading/` — P2P trading module
 - `contracts/` — Solidity smart contracts and deployment scripts
 
 ## Required Secrets
