@@ -675,8 +675,7 @@ def get_reconciler() -> GoodMarketClaimReconciler:
 def init_goodmarket_claim_reconciler(app: Any = None) -> bool:
     """Start the reconciler if ``GOODMARKET_CLAIM_RECONCILER_ENABLED`` is set.
 
-    Mirrors the opt-in pattern used by ``init_p2p_trading`` so the worker
-    only spins up in real long-lived processes (Gunicorn / Reserved VM)
+    The worker only spins up in real long-lived processes (Gunicorn / Reserved VM)
     and stays out of unit tests, one-shot CLI invocations, or local dev
     runs that don't want background threads.
     """
