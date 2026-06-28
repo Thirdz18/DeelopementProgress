@@ -613,11 +613,20 @@ else:
 # Initialize P2P G$ Trading
 logger.info("🤝 Initializing P2P G$ Trading system...")
 try:
-    from p2p import init_p2p
+    from p2p import init_p2p, init_p2p_expiry_scheduler
     if init_p2p(app):
         logger.info("✅ P2P G$ Trading initialized")
     else:
         logger.error("❌ P2P G$ Trading initialization failed")
+    # In-process auto-expiry + reconciliation worker. Self-gated: starts only
+    # when the contract address + P2P_KEY are configured (or P2P_EXPIRY_WORKER_ENABLED=1).
+    try:
+        if init_p2p_expiry_scheduler(app):
+            logger.info("✅ P2P auto-expiry worker started")
+        else:
+            logger.info("ℹ️ P2P auto-expiry worker not started (disabled or not configured)")
+    except Exception as e:
+        logger.error(f"❌ P2P auto-expiry worker initialization failed: {e}")
 except Exception as e:
     logger.error(f"❌ P2P G$ Trading initialization failed: {e}")
 
