@@ -119,6 +119,21 @@ def _same(a, b):
     return (a or "").strip().lower() == (b or "").strip().lower()
 
 
+@p2p_bp.errorhandler(Exception)
+def _p2p_json_errors(e):
+    """Always return JSON for /p2p/api/* so the frontend never tries to parse an
+    HTML error page (the "Unexpected token '<'" symptom). Non-API routes keep
+    their normal HTML error behaviour."""
+    from werkzeug.exceptions import HTTPException
+
+    if not request.path.startswith("/p2p/api"):
+        raise e
+    if isinstance(e, HTTPException):
+        return jsonify({"success": False, "error": e.description}), e.code
+    logger.exception("P2P API error on %s: %s", request.path, e)
+    return jsonify({"success": False, "error": "Internal server error"}), 500
+
+
 # ── Page ─────────────────────────────────────────────────────────────────────
 @p2p_bp.route("/")
 def p2p_home():

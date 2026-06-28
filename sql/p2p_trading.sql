@@ -5,7 +5,9 @@
 -- listing/order amounts. These tables hold everything that lives OFF-chain:
 -- price, payment methods, chat, proof of payment, and dispute/review state.
 --
--- Run this in the Supabase SQL editor before enabling the P2P feature.
+-- Safe to re-run: every table uses CREATE TABLE IF NOT EXISTS *and* an explicit
+-- ADD COLUMN IF NOT EXISTS block, so a pre-existing/partial table (e.g. from an
+-- earlier run) is upgraded in place instead of failing on a missing column.
 -- All tables mirror their on-chain counterpart via `onchain_id`.
 -- ============================================================================
 
@@ -25,6 +27,19 @@ CREATE TABLE IF NOT EXISTS p2p_listings (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Upgrade a pre-existing table to the full column set.
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS onchain_id     BIGINT;
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS seller_wallet  VARCHAR(42);
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS total_gd       NUMERIC;
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS min_order_gd   NUMERIC DEFAULT 1000;
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS price_usdt     NUMERIC;
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS fiat_currency  VARCHAR(8);
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS fiat_rate      NUMERIC;
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS terms          TEXT;
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS status         VARCHAR(16) DEFAULT 'active';
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS create_tx_hash VARCHAR(66);
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS created_at     TIMESTAMPTZ DEFAULT now();
+ALTER TABLE p2p_listings ADD COLUMN IF NOT EXISTS updated_at     TIMESTAMPTZ DEFAULT now();
 CREATE INDEX IF NOT EXISTS idx_p2p_listings_seller ON p2p_listings(seller_wallet);
 CREATE INDEX IF NOT EXISTS idx_p2p_listings_status ON p2p_listings(status);
 CREATE INDEX IF NOT EXISTS idx_p2p_listings_onchain ON p2p_listings(onchain_id);
@@ -39,6 +54,12 @@ CREATE TABLE IF NOT EXISTS p2p_payment_methods (
     active        BOOLEAN NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS seller_wallet VARCHAR(42);
+ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS kind          VARCHAR(24);
+ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS label         VARCHAR(64);
+ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS details       JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS active        BOOLEAN DEFAULT TRUE;
+ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ DEFAULT now();
 CREATE INDEX IF NOT EXISTS idx_p2p_pm_seller ON p2p_payment_methods(seller_wallet);
 
 -- ── Orders (mirror of an on-chain order) ────────────────────────────────────
@@ -64,6 +85,24 @@ CREATE TABLE IF NOT EXISTS p2p_orders (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS onchain_id         BIGINT;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS listing_id         BIGINT;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS listing_onchain_id BIGINT;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS buyer_wallet       VARCHAR(42);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS seller_wallet      VARCHAR(42);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS amount_gd          NUMERIC;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_amount         NUMERIC;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_currency       VARCHAR(8);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS payment_method_id  BIGINT;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS status             VARCHAR(20) DEFAULT 'open';
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS reject_reason      TEXT;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS reviewed_by        VARCHAR(42);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS deadline           TIMESTAMPTZ;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS open_tx_hash       VARCHAR(66);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS paid_tx_hash       VARCHAR(66);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS release_tx_hash    VARCHAR(66);
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS created_at         TIMESTAMPTZ DEFAULT now();
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ DEFAULT now();
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_buyer ON p2p_orders(buyer_wallet);
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_seller ON p2p_orders(seller_wallet);
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_status ON p2p_orders(status);
@@ -77,6 +116,10 @@ CREATE TABLE IF NOT EXISTS p2p_messages (
     body          TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE p2p_messages ADD COLUMN IF NOT EXISTS order_id      BIGINT;
+ALTER TABLE p2p_messages ADD COLUMN IF NOT EXISTS sender_wallet VARCHAR(42);
+ALTER TABLE p2p_messages ADD COLUMN IF NOT EXISTS body          TEXT;
+ALTER TABLE p2p_messages ADD COLUMN IF NOT EXISTS created_at    TIMESTAMPTZ DEFAULT now();
 CREATE INDEX IF NOT EXISTS idx_p2p_messages_order ON p2p_messages(order_id);
 
 -- ── Proof of payment (image converted via backend ImgBB key) ────────────────
@@ -88,6 +131,11 @@ CREATE TABLE IF NOT EXISTS p2p_proofs (
     reference       TEXT,        -- txid / reference number
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE p2p_proofs ADD COLUMN IF NOT EXISTS order_id        BIGINT;
+ALTER TABLE p2p_proofs ADD COLUMN IF NOT EXISTS uploader_wallet VARCHAR(42);
+ALTER TABLE p2p_proofs ADD COLUMN IF NOT EXISTS image_url       TEXT;
+ALTER TABLE p2p_proofs ADD COLUMN IF NOT EXISTS reference       TEXT;
+ALTER TABLE p2p_proofs ADD COLUMN IF NOT EXISTS created_at      TIMESTAMPTZ DEFAULT now();
 CREATE INDEX IF NOT EXISTS idx_p2p_proofs_order ON p2p_proofs(order_id);
 
 -- ── Disputes / admin review ─────────────────────────────────────────────────
@@ -102,6 +150,14 @@ CREATE TABLE IF NOT EXISTS p2p_disputes (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     resolved_at     TIMESTAMPTZ
 );
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS order_id        BIGINT;
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS raised_by       VARCHAR(42);
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS reason          TEXT;
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS status          VARCHAR(20) DEFAULT 'open';
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS resolved_by     VARCHAR(42);
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS resolve_tx_hash VARCHAR(66);
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS created_at      TIMESTAMPTZ DEFAULT now();
+ALTER TABLE p2p_disputes ADD COLUMN IF NOT EXISTS resolved_at     TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_p2p_disputes_order ON p2p_disputes(order_id);
 CREATE INDEX IF NOT EXISTS idx_p2p_disputes_status ON p2p_disputes(status);
 
