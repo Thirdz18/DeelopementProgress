@@ -11,7 +11,10 @@ Conventions mirror the savings module:
     with P2P_KEY and lives under /p2p/api/admin/* (admin dashboard only).
 """
 import os
+import time
 import logging
+import threading
+from collections import defaultdict, deque
 from functools import wraps
 
 from flask import Blueprint, render_template, session, redirect, jsonify, request
@@ -28,6 +31,55 @@ CHAIN_ID = chain.CHAIN_ID
 
 # Order statuses the admin dashboard must review.
 REVIEW_STATUSES = ["seller_rejected", "disputed"]
+
+
+def feature_enabled():
+    """Kill-switch for the whole P2P surface. Defaults ON; set P2P_ENABLED=0 to
+    hide the page and reject write endpoints (read endpoints still degrade)."""
+    return os.getenv("P2P_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+# ── Lightweight in-process rate limiter ──────────────────────────────────────
+# No external dependency (the repo has none). Per-(wallet-or-ip, bucket) sliding
+# window. Best-effort per Gunicorn worker — enough to blunt abusive bursts of
+# writes (listing/order/proof/chat) without a shared store.
+_RL_LOCK = threading.Lock()
+_RL_HITS = defaultdict(deque)
+
+
+def rate_limit(max_calls, per_seconds, bucket=None):
+    def decorator(f):
+        name = bucket or f.__name__
+
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            ident = (_wallet() or request.remote_addr or "anon").lower()
+            key = f"{name}:{ident}"
+            now = time.time()
+            with _RL_LOCK:
+                hits = _RL_HITS[key]
+                while hits and hits[0] <= now - per_seconds:
+                    hits.popleft()
+                if len(hits) >= max_calls:
+                    retry = max(1, int(per_seconds - (now - hits[0])))
+                    return jsonify({
+                        "success": False,
+                        "error": "Rate limit exceeded. Please slow down.",
+                        "retry_after": retry,
+                    }), 429
+                hits.append(now)
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def feature_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not feature_enabled():
+            return jsonify({"success": False, "error": "P2P trading is currently disabled"}), 503
+        return f(*args, **kwargs)
+    return wrapper
 
 
 def _wallet():
@@ -70,6 +122,8 @@ def _same(a, b):
 # ── Page ─────────────────────────────────────────────────────────────────────
 @p2p_bp.route("/")
 def p2p_home():
+    if not feature_enabled():
+        return redirect("/")
     wallet, verified = _require_auth()
     if not wallet or not verified:
         return redirect("/login")
@@ -163,6 +217,8 @@ def api_quote():
 
 # ── Seller: payment methods + listings ────────────────────────────────────────
 @p2p_bp.route("/api/payment-methods", methods=["POST"])
+@feature_required
+@rate_limit(20, 60)
 @auth_required
 def api_add_payment_method():
     wallet = _wallet()
@@ -175,6 +231,8 @@ def api_add_payment_method():
 
 
 @p2p_bp.route("/api/listings", methods=["POST"])
+@feature_required
+@rate_limit(10, 60)
 @auth_required
 def api_create_listing():
     """Record an offchain listing AFTER the seller signed createListing on-chain."""
@@ -216,6 +274,8 @@ def api_create_listing():
 
 
 @p2p_bp.route("/api/listings/<int:listing_id>/cancel", methods=["POST"])
+@feature_required
+@rate_limit(20, 60)
 @auth_required
 def api_cancel_listing(listing_id):
     wallet = _wallet()
@@ -230,6 +290,8 @@ def api_cancel_listing(listing_id):
 
 # ── Buyer: orders ─────────────────────────────────────────────────────────────
 @p2p_bp.route("/api/orders", methods=["POST"])
+@feature_required
+@rate_limit(15, 60)
 @auth_required
 def api_create_order():
     """Record an order AFTER the buyer signed openOrder on-chain."""
@@ -313,6 +375,8 @@ def api_my_orders():
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/mark-paid", methods=["POST"])
+@feature_required
+@rate_limit(20, 60)
 @auth_required
 def api_mark_paid(order_id):
     wallet = _wallet()
@@ -327,6 +391,8 @@ def api_mark_paid(order_id):
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/proof", methods=["POST"])
+@feature_required
+@rate_limit(15, 60)
 @auth_required
 def api_upload_proof(order_id):
     """Buyer uploads a raw image; backend converts via the managed ImgBB key."""
@@ -349,6 +415,8 @@ def api_upload_proof(order_id):
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/approve", methods=["POST"])
+@feature_required
+@rate_limit(20, 60)
 @auth_required
 def api_seller_approve(order_id):
     """Seller approved + signed releaseOrder on-chain; record the release."""
@@ -364,6 +432,8 @@ def api_seller_approve(order_id):
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/reject", methods=["POST"])
+@feature_required
+@rate_limit(20, 60)
 @auth_required
 def api_seller_reject(order_id):
     """Seller rejects the proof — NO contract call. Escalate to admin review."""
@@ -382,6 +452,8 @@ def api_seller_reject(order_id):
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/cancel", methods=["POST"])
+@feature_required
+@rate_limit(20, 60)
 @auth_required
 def api_cancel_order(order_id):
     wallet = _wallet()
@@ -396,6 +468,8 @@ def api_cancel_order(order_id):
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/dispute", methods=["POST"])
+@feature_required
+@rate_limit(10, 60)
 @auth_required
 def api_raise_dispute(order_id):
     wallet = _wallet()
@@ -413,6 +487,7 @@ def api_raise_dispute(order_id):
 
 # ── Chat ───────────────────────────────────────────────────────────────────
 @p2p_bp.route("/api/orders/<int:order_id>/messages", methods=["GET", "POST"])
+@rate_limit(120, 60)
 @auth_required
 def api_messages(order_id):
     wallet = _wallet()
@@ -449,6 +524,7 @@ def api_admin_review_queue():
 
 
 @p2p_bp.route("/api/admin/orders/<int:order_id>/release", methods=["POST"])
+@rate_limit(30, 60)
 @admin_required
 def api_admin_release(order_id):
     wallet = _wallet()
@@ -472,6 +548,7 @@ def api_admin_release(order_id):
 
 
 @p2p_bp.route("/api/admin/orders/<int:order_id>/refund", methods=["POST"])
+@rate_limit(30, 60)
 @admin_required
 def api_admin_refund(order_id):
     wallet = _wallet()
@@ -492,3 +569,16 @@ def api_admin_refund(order_id):
     if dispute:
         db.resolve_dispute_row(dispute["id"], "resolved_seller", wallet, result["tx_hash"])
     return jsonify({"success": True, "order": updated, "tx_hash": result["tx_hash"]})
+
+
+@p2p_bp.route("/api/admin/worker-status")
+@admin_required
+def api_admin_worker_status():
+    """Health/telemetry for the in-process auto-expiry + reconciliation worker."""
+    from .expiry import get_expiry_scheduler
+    return jsonify({
+        "success": True,
+        "feature_enabled": feature_enabled(),
+        "contract_configured": chain.is_configured(),
+        "worker": get_expiry_scheduler().get_status(),
+    })

@@ -147,6 +147,37 @@ def list_orders_for_wallet(wallet, role="buyer", limit=100):
     return res.data or []
 
 
+def list_expired_open_orders(now_iso=None, limit=100):
+    """Open orders whose payment deadline has already passed (candidates for
+    auto-expiry/refund)."""
+    now_iso = now_iso or datetime.now(timezone.utc).isoformat()
+    res = (
+        _reader()
+        .table("p2p_orders")
+        .select("*")
+        .eq("status", "open")
+        .lt("deadline", now_iso)
+        .order("deadline", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
+def list_open_or_paid_orders(limit=300):
+    """Active orders (open|paid) used by the reconciler to sync on-chain state."""
+    res = (
+        _reader()
+        .table("p2p_orders")
+        .select("*")
+        .in_("status", ["open", "paid"])
+        .order("updated_at", desc=False)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
+
 def list_orders_by_status(statuses, limit=200):
     res = (
         _reader()
