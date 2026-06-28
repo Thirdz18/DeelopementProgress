@@ -119,6 +119,21 @@ def _same(a, b):
     return (a or "").strip().lower() == (b or "").strip().lower()
 
 
+def _db_error(e):
+    """Pull a concise, readable message out of a Supabase/Postgrest error so the
+    frontend can show *why* a write failed (e.g. a missing column or constraint)
+    instead of a generic 500."""
+    for attr in ("message",):
+        val = getattr(e, attr, None)
+        if val:
+            return str(val)
+    args = getattr(e, "args", None)
+    if args and isinstance(args[0], dict):
+        d = args[0]
+        return d.get("message") or d.get("details") or str(d)
+    return str(e)
+
+
 @p2p_bp.errorhandler(Exception)
 def _p2p_json_errors(e):
     """Always return JSON for /p2p/api/* so the frontend never tries to parse an
@@ -274,17 +289,21 @@ def api_create_listing():
         if not live or not _same(live["seller"], wallet):
             return jsonify({"success": False, "error": "On-chain listing not found for this wallet"}), 400
 
-    listing = db.create_listing(
-        seller_wallet=wallet,
-        total_gd=total_gd,
-        min_order_gd=min_order_gd,
-        price_usdt=price_usdt,
-        fiat_currency=(data.get("fiat_currency") or None),
-        fiat_rate=data.get("fiat_rate"),
-        terms=data.get("terms"),
-        onchain_id=onchain_id,
-        create_tx_hash=data.get("create_tx_hash"),
-    )
+    try:
+        listing = db.create_listing(
+            seller_wallet=wallet,
+            total_gd=total_gd,
+            min_order_gd=min_order_gd,
+            price_usdt=price_usdt,
+            fiat_currency=(data.get("fiat_currency") or None),
+            fiat_rate=data.get("fiat_rate"),
+            terms=data.get("terms"),
+            onchain_id=onchain_id,
+            create_tx_hash=data.get("create_tx_hash"),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.exception("create_listing failed")
+        return jsonify({"success": False, "error": f"Could not record listing: {_db_error(e)}"}), 500
     return jsonify({"success": True, "listing": listing})
 
 
@@ -340,17 +359,21 @@ def api_create_order():
         pay_currency = listing["fiat_currency"]
 
     window = int(os.getenv("P2P_PAYMENT_WINDOW_SECONDS", 1800))
-    order = db.create_order(
-        listing_row=listing,
-        buyer_wallet=wallet,
-        amount_gd=amount_gd,
-        pay_amount=pay_amount,
-        pay_currency=pay_currency,
-        payment_method_id=data.get("payment_method_id"),
-        onchain_id=onchain_id,
-        open_tx_hash=data.get("open_tx_hash"),
-        payment_window_seconds=window,
-    )
+    try:
+        order = db.create_order(
+            listing_row=listing,
+            buyer_wallet=wallet,
+            amount_gd=amount_gd,
+            pay_amount=pay_amount,
+            pay_currency=pay_currency,
+            payment_method_id=data.get("payment_method_id"),
+            onchain_id=onchain_id,
+            open_tx_hash=data.get("open_tx_hash"),
+            payment_window_seconds=window,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.exception("create_order failed")
+        return jsonify({"success": False, "error": f"Could not record order: {_db_error(e)}"}), 500
     return jsonify({"success": True, "order": order})
 
 
