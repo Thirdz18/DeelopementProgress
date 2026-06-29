@@ -111,6 +111,11 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         "buyer_wallet": _norm(buyer_wallet),
         "seller_wallet": _norm(listing_row["seller_wallet"]),
         "amount_gd": amount_gd,
+        # Backward compatibility: some early P2P deployments created a
+        # NOT NULL `g_dollar_amount` column before the current `amount_gd`
+        # name was standardized. Supplying both keeps inserts working until
+        # those databases are migrated.
+        "g_dollar_amount": amount_gd,
         "pay_amount": pay_amount,
         "pay_currency": pay_currency,
         "payment_method_id": payment_method_id,
@@ -118,7 +123,17 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         "deadline": deadline.isoformat(),
         "open_tx_hash": open_tx_hash,
     }
-    res = _writer().table("p2p_orders").insert(row).execute()
+    try:
+        res = _writer().table("p2p_orders").insert(row).execute()
+    except Exception as exc:
+        # Fresh/current schemas may not have the legacy alias column. Retry
+        # without it only for that specific schema-cache error; legacy schemas
+        # with a NOT NULL g_dollar_amount still succeed on the first attempt.
+        if "g_dollar_amount" not in str(exc) or "schema cache" not in str(exc).lower():
+            raise
+        logger.info("p2p_orders.g_dollar_amount not present; retrying order insert without legacy alias")
+        row.pop("g_dollar_amount", None)
+        res = _writer().table("p2p_orders").insert(row).execute()
     return res.data[0] if res.data else None
 
 
