@@ -63,6 +63,12 @@
         .modal-box { background:#15102e; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:1.3rem; max-width:560px; width:100%; max-height:90vh; overflow-y:auto; }
         .muted { color:rgba(255,255,255,.45); font-size:.8rem; }
         .pm-tag { display:inline-block; background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.25); border-radius:8px; padding:.2rem .55rem; font-size:.74rem; margin:.15rem .2rem 0 0; }
+        .next-steps { background:rgba(99,102,241,.10); border:1px solid rgba(99,102,241,.25); border-radius:12px; padding:.8rem 1rem; margin:.75rem 0; }
+        .next-steps ol { margin:.45rem 0 0 1.1rem; padding:0; color:rgba(255,255,255,.78); font-size:.84rem; line-height:1.55; }
+        .next-steps li { margin:.25rem 0; }
+        .step-done { color:#6ee7b7; font-weight:700; }
+        .step-current { color:#fcd34d; font-weight:800; }
+        .deadline-pill { display:inline-block; background:rgba(245,158,11,.12); color:#fcd34d; border:1px solid rgba(245,158,11,.25); border-radius:999px; padding:.15rem .5rem; font-size:.72rem; font-weight:700; margin-top:.25rem; }
     </style>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
@@ -219,6 +225,20 @@ function shortAddr(a){ return a ? a.slice(0,6)+"…"+a.slice(-4) : ""; }
 function showAlert(type,msg){ const el=document.getElementById('globalAlert'); el.className='alert alert-'+type; el.innerHTML=msg; el.style.display='block'; if(type==='success') setTimeout(()=>el.style.display='none',6000); }
 function api(url,opts){ return fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opts)).then(r=>r.json()); }
 function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
+function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isNaN(d.getTime())) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+function buyerNextSteps(o, proofs){
+    const hasProof = proofs && proofs.length;
+    const paid = ['paid','released','owner_released'].includes(o.status);
+    const released = ['released','owner_released'].includes(o.status);
+    const deadline = formatDeadline(o.deadline);
+    return `<div class="next-steps"><strong>Buyer next steps</strong>${deadline&&!paid?`<div class="deadline-pill">Pay before ${deadline}</div>`:''}<ol>
+        <li class="step-done">G$ reserved in escrow.</li>
+        <li class="${paid?'step-done':'step-current'}">Send the off-chain payment to the seller using the payment details below.</li>
+        <li class="${hasProof?'step-done':(paid?'step-current':'')}">Upload a screenshot/receipt and optional reference number.</li>
+        <li class="${released?'step-done':''}">Tap <strong>I've paid</strong> so the seller can approve and release your G$.</li>
+    </ol></div>`;
+}
 
 // ── Tabs ──
 document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{
@@ -299,7 +319,10 @@ async function doOpenOrder(l){
         const onchainId = ev? Number(ev.orderId): null;
         const res=await api('/p2p/api/orders',{method:'POST',body:JSON.stringify({listing_id:l.id, onchain_id:onchainId, amount_gd:amt, open_tx_hash:tx})});
         if(!res.success) throw new Error(res.error||'Failed to record order');
-        closeModal('buyModal'); showAlert('success','Order opened! Pay the seller, then upload proof in My Orders.');
+        closeModal('buyModal');
+        document.querySelector('[data-tab="orders"]').click();
+        currentOrderRole='buyer';
+        showAlert('success','Order opened! Follow the buyer next steps: pay the seller, upload proof, then mark paid.');
         openOrderRoom(res.order.id);
     }catch(e){ al.className='alert alert-error'; al.style.display='block'; al.textContent='❌ '+(e.message||e); btn.disabled=false; }
 }
@@ -380,6 +403,10 @@ async function openOrderRoom(orderId){
     if(!res.success){ showAlert('error',res.error||'Failed'); return; }
     const o=res.order, isBuyer=o.buyer_wallet.toLowerCase()===WALLET.toLowerCase(), isSeller=o.seller_wallet.toLowerCase()===WALLET.toLowerCase();
     const proofs=res.proofs||[], msgs=res.messages||[];
+    const pms = await api('/p2p/api/payment-methods?seller='+o.seller_wallet);
+    const paymentMethodsHtml = (pms.success&&pms.payment_methods.length)
+        ? pms.payment_methods.map(p=>`<span class="pm-tag">${escapeHtml(p.label||p.kind)}: ${escapeHtml((p.details&&(p.details.account||p.details.address))||'')}</span>`).join('')
+        : '<span class="muted">Seller has not listed payment details. Message them in chat before paying.</span>';
     let actions='';
     if(isBuyer){
         if(o.status==='open'||o.status==='paid'){
@@ -397,8 +424,10 @@ async function openOrderRoom(orderId){
         <button class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
         Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
-        ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${o.reject_reason}</div>`:''}
-        <div><strong>Proof of payment</strong>${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${p.reference}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div>
+        ${isBuyer?buyerNextSteps(o, proofs):''}
+        <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
+        ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
+        <div><strong>Proof of payment</strong>${isBuyer&&(o.status==='open'||o.status==='paid')?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div>
         <div style="margin-top:.7rem"><strong>Chat</strong>
         <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
         <div class="row"><input id="chatInput" placeholder="Message…"><button class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
@@ -419,6 +448,8 @@ async function markPaid(id,onchain){
 async function uploadProof(id,input){
     if(!input.files.length) return;
     const fd=new FormData(); fd.append('image',input.files[0]);
+    const refEl=document.getElementById('proofReference');
+    if(refEl && refEl.value.trim()) fd.append('reference', refEl.value.trim());
     roomAlert('info','<span class="spinner"></span> Uploading proof…');
     const r=await fetch('/p2p/api/orders/'+id+'/proof',{method:'POST',body:fd}).then(x=>x.json());
     if(r.success){ roomAlert('success','Proof uploaded.'); openOrderRoom(id); } else roomAlert('error',r.error||'Upload failed');
