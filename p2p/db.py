@@ -99,11 +99,42 @@ def list_payment_methods(seller_wallet):
     return res.data or []
 
 
+def get_payment_method(payment_method_id):
+    if not payment_method_id:
+        return None
+    res = (
+        _reader()
+        .table("p2p_payment_methods")
+        .select("*")
+        .eq("id", payment_method_id)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def _payment_method_label(payment_method):
+    if not payment_method:
+        return None
+    label = payment_method.get("label") or payment_method.get("kind") or "payment_method"
+    details = payment_method.get("details") or {}
+    account = details.get("account") or details.get("address") or details.get("number")
+    return f"{label}: {account}" if account else label
+
+
 # ── Orders ──────────────────────────────────────────────────────────────────
 def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
                 payment_method_id=None, onchain_id=None, open_tx_hash=None,
                 payment_window_seconds=1800):
     deadline = datetime.now(timezone.utc) + timedelta(seconds=payment_window_seconds)
+    payment_method = get_payment_method(payment_method_id)
+    if payment_method_id and (not payment_method or _norm(payment_method.get("seller_wallet")) != _norm(listing_row["seller_wallet"])):
+        raise ValueError("Invalid payment method for this seller")
+    if not payment_method:
+        seller_methods = list_payment_methods(listing_row["seller_wallet"])
+        payment_method = seller_methods[0] if seller_methods else None
+        payment_method_id = payment_method.get("id") if payment_method else None
+    payment_method_text = _payment_method_label(payment_method) or "Not specified"
     row = {
         "onchain_id": onchain_id,
         "listing_id": listing_row["id"],
@@ -129,6 +160,10 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         # legacy NOT NULL constraints from rejecting new USDT orders.
         "fiat_currency": pay_currency,
         "payment_method_id": payment_method_id,
+        # Backward compatibility: an early schema used a NOT NULL text
+        # `payment_method` column instead of the current FK. Keep it filled
+        # so old Supabase databases do not fail after the on-chain reserve.
+        "payment_method": payment_method_text,
         "status": "open",
         "deadline": deadline.isoformat(),
         "open_tx_hash": open_tx_hash,
@@ -137,6 +172,7 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         "g_dollar_amount": "amount_gd",
         "fiat_amount": "pay_amount",
         "fiat_currency": "pay_currency",
+        "payment_method": "payment_method_id",
     }
     while True:
         try:
