@@ -103,6 +103,23 @@ ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS paid_tx_hash       VARCHAR(66);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS release_tx_hash    VARCHAR(66);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS created_at         TIMESTAMPTZ DEFAULT now();
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ DEFAULT now();
+
+-- Backward compatibility for early P2P deployments that created a separate
+-- p2p_orders.order_id column. The app now uses p2p_orders.id as the local DB
+-- primary key and p2p_orders.onchain_id for the escrow contract order id, so a
+-- legacy NOT NULL constraint on order_id prevents new orders from being saved.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'p2p_orders'
+          AND column_name = 'order_id'
+    ) THEN
+        ALTER TABLE p2p_orders ALTER COLUMN order_id DROP NOT NULL;
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_buyer ON p2p_orders(buyer_wallet);
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_seller ON p2p_orders(seller_wallet);
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_status ON p2p_orders(status);
