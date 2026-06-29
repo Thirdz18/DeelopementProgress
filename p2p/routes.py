@@ -425,6 +425,11 @@ def api_mark_paid(order_id):
         return jsonify({"success": False, "error": "Only the buyer can mark paid"}), 403
     data = request.get_json(silent=True) or {}
     updated = db.update_order(order_id, {"status": "paid", "paid_tx_hash": data.get("paid_tx_hash")})
+    try:
+        from notifications_service import notification_service
+        notification_service.clear_user_cache(order.get("seller_wallet"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not clear seller notification cache for P2P order %s: %s", order_id, exc)
     return jsonify({"success": True, "order": updated})
 
 
