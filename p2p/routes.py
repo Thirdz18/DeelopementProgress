@@ -468,7 +468,7 @@ def api_upload_proof(order_id):
         return jsonify({"success": False, "error": "Order not found"}), 404
     if not _same(order["buyer_wallet"], wallet):
         return jsonify({"success": False, "error": "Only the buyer can upload proof"}), 403
-    if order.get("status") != "open":
+    if order.get("status") not in ("open", "paid"):
         return jsonify({"success": False, "error": "Proof upload is closed for this order"}), 409
 
     file = request.files.get("image")
@@ -479,7 +479,7 @@ def api_upload_proof(order_id):
     if not result.get("success"):
         return jsonify({"success": False, "error": result.get("error", "Upload failed")}), 502
     proof = db.add_proof(order_id, wallet, result["url"], request.form.get("reference"))
-    return jsonify({"success": True, "proof": proof})
+    return jsonify({"success": True, "proof": proof, "order_status": order.get("status")})
 
 
 @p2p_bp.route("/api/orders/<int:order_id>/approve", methods=["POST"])

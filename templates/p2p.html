@@ -466,6 +466,8 @@ async function openOrderRoom(orderId){
             actions+=`<button type="button" class="btn btn-primary btn-sm" onclick="markPaid(${o.id},${o.onchain_id})">I've paid (mark paid)</button>`;
             actions+=`<label class="btn btn-outline btn-sm" style="cursor:pointer">Upload proof<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label>`;
             actions+=`<button type="button" class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
+        } else if(o.status==='paid'){
+            actions+=`<label class="btn btn-outline btn-sm" style="cursor:pointer">Upload / replace proof<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label>`;
         }
     }
     if(isSeller && o.status==='paid'){
@@ -480,7 +482,7 @@ async function openOrderRoom(orderId){
         ${isBuyer?buyerNextSteps(o, proofs):''}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
-        <div><strong>Proof of payment</strong>${isBuyer&&o.status==='open'?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
+        <div><strong>Proof of payment</strong>${isBuyer&&['open','paid'].includes(o.status)?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
         <div style="margin-top:.7rem"><strong>Chat</strong>
         <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
         <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
@@ -521,7 +523,7 @@ async function uploadProof(id,input){
             const ref = r.proof.reference ? `<div class="muted">Ref: ${escapeHtml(r.proof.reference)}</div>` : '';
             proofList.innerHTML = `<div><img class="proof-img" src="${escapeHtml(r.proof.image_url)}">${ref}</div>` + proofList.innerHTML.replace('<div class="muted">None uploaded yet</div>','');
         }
-        roomAlert('success','Proof uploaded. Click Mark as paid when you are ready to notify the seller.');
+        roomAlert('success', r.order_status === 'paid' ? 'Proof uploaded. The seller can now view it for review.' : 'Proof uploaded. Click Mark as paid when you are ready to notify the seller.');
     }catch(e){
         input.disabled = false;
         roomAlert('error','❌ '+(e.message||'Upload failed'));
