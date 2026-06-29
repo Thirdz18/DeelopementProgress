@@ -64,6 +64,19 @@ def list_active_listings(limit=100):
     return res.data or []
 
 
+
+def list_listings_for_seller(seller_wallet, limit=100):
+    res = (
+        _reader()
+        .table("p2p_listings")
+        .select("*")
+        .eq("seller_wallet", _norm(seller_wallet))
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return res.data or []
+
 def get_listing_row(listing_id):
     res = _reader().table("p2p_listings").select("*").eq("id", listing_id).limit(1).execute()
     return res.data[0] if res.data else None

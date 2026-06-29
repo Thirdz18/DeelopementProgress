@@ -184,18 +184,39 @@ def api_price_reference():
     return jsonify({"success": True, "price": chain.get_gd_price_reference(fiat)})
 
 
+def _sync_listing_from_chain(listing):
+    """Attach live availability and close sold-out/inactive mirrored listings."""
+    if not listing or not chain.is_configured():
+        return listing
+    oc = listing.get("onchain_id")
+    if oc is None:
+        return listing
+    live = chain.get_listing(oc)
+    if not live:
+        return listing
+    listing["available_gd"] = live["available_gd"]
+    listing["onchain_active"] = live["active"]
+    if listing.get("status") == "active" and (not live["active"] or float(live["available_gd"] or 0) <= 0):
+        status = "closed" if float(live["available_gd"] or 0) <= 0 else "cancelled"
+        updated = db.update_listing(listing["id"], {"status": status})
+        if updated:
+            updated["available_gd"] = live["available_gd"]
+            updated["onchain_active"] = live["active"]
+            return updated
+        listing["status"] = status
+    return listing
+
+
 @p2p_bp.route("/api/listings")
 def api_listings():
-    listings = db.list_active_listings()
-    # Merge live on-chain availability when the contract is configured.
-    if chain.is_configured():
-        for l in listings:
-            oc = l.get("onchain_id")
-            if oc is not None:
-                live = chain.get_listing(oc)
-                if live:
-                    l["available_gd"] = live["available_gd"]
-                    l["onchain_active"] = live["active"]
+    seller = request.args.get("seller")
+    include_inactive = request.args.get("include_inactive") in {"1", "true", "yes"}
+    listings = db.list_listings_for_seller(seller) if seller and include_inactive else db.list_active_listings()
+    # Merge live on-chain availability when the contract is configured, and
+    # hide sold-out/inactive ads from the public Buy feed.
+    listings = [_sync_listing_from_chain(l) for l in listings]
+    if not include_inactive:
+        listings = [l for l in listings if l.get("status") == "active" and float(l.get("available_gd", l.get("total_gd", 0)) or 0) > 0 and l.get("onchain_active", True)]
     return jsonify({"success": True, "listings": listings})
 
 
@@ -423,6 +444,8 @@ def api_mark_paid(order_id):
         return jsonify({"success": False, "error": "Order not found"}), 404
     if not _same(order["buyer_wallet"], wallet):
         return jsonify({"success": False, "error": "Only the buyer can mark paid"}), 403
+    if order.get("status") != "open":
+        return jsonify({"success": False, "error": "This order is already marked paid or closed"}), 409
     data = request.get_json(silent=True) or {}
     updated = db.update_order(order_id, {"status": "paid", "paid_tx_hash": data.get("paid_tx_hash")})
     try:
@@ -445,6 +468,8 @@ def api_upload_proof(order_id):
         return jsonify({"success": False, "error": "Order not found"}), 404
     if not _same(order["buyer_wallet"], wallet):
         return jsonify({"success": False, "error": "Only the buyer can upload proof"}), 403
+    if order.get("status") != "open":
+        return jsonify({"success": False, "error": "Proof upload is closed for this order"}), 409
 
     file = request.files.get("image")
     if not file:
@@ -471,6 +496,9 @@ def api_seller_approve(order_id):
         return jsonify({"success": False, "error": "Only the seller can approve"}), 403
     data = request.get_json(silent=True) or {}
     updated = db.update_order(order_id, {"status": "released", "release_tx_hash": data.get("release_tx_hash")})
+    listing = db.get_listing_row(order.get("listing_id"))
+    if listing:
+        _sync_listing_from_chain(listing)
     return jsonify({"success": True, "order": updated})
 
 
@@ -587,6 +615,9 @@ def api_admin_release(order_id):
     dispute = db.get_open_dispute_for_order(order_id)
     if dispute:
         db.resolve_dispute_row(dispute["id"], "resolved_buyer", wallet, result["tx_hash"])
+    listing = db.get_listing_row(order.get("listing_id"))
+    if listing:
+        _sync_listing_from_chain(listing)
     return jsonify({"success": True, "order": updated, "tx_hash": result["tx_hash"]})
 
 

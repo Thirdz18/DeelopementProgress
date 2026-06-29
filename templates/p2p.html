@@ -241,12 +241,13 @@ function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isN
 function buyerNextSteps(o, proofs){
     const hasProof = proofs && proofs.length;
     const paid = ['paid','released','owner_released'].includes(o.status);
+    const terminal = ['released','owner_released','cancelled','owner_refunded'].includes(o.status);
     const deadline = formatDeadline(o.deadline);
     return `<div class="next-steps"><strong>Buyer next steps</strong>${deadline&&!paid?`<div class="deadline-pill">Pay before ${deadline}</div>`:''}<ol>
         <li class="step-done">G$ reserved in escrow.</li>
         <li class="${paid?'step-done':'step-current'}">Send the off-chain payment to the seller using the payment details below.</li>
         <li class="${hasProof?'step-done':(paid?'step-current':'')}">Upload a screenshot/receipt and optional reference number.</li>
-        <li class="${paid?'step-done':(hasProof?'step-current':'')}">Tap <strong>I've paid</strong> to notify the seller for approval or rejection.</li>
+        <li class="${paid?'step-done':(hasProof?'step-current':'')}">${terminal?'Seller has been notified / order is closed.':`Tap <strong>I've paid</strong> to notify the seller for approval or rejection.`}</li>
     </ol></div>`;
 }
 
@@ -384,13 +385,17 @@ async function loadMyPms(){
     box.innerHTML=(res.success&&res.payment_methods.length)? res.payment_methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join(''):'<span class="muted">None yet</span>';
 }
 async function loadMyAds(){
-    const res=await api('/p2p/api/listings'); const box=document.getElementById('myAds');
+    const res=await api('/p2p/api/listings?seller='+WALLET+'&include_inactive=1'); const box=document.getElementById('myAds');
     const mine=(res.listings||[]).filter(l=>l.seller_wallet&&l.seller_wallet.toLowerCase()===WALLET.toLowerCase());
     if(!mine.length){ box.innerHTML='<div class="empty">No ads yet.</div>'; return; }
-    box.innerHTML=mine.map(l=>`<div class="listing"><div class="row" style="justify-content:space-between">
-        <div><div class="price">${Number(l.price_usdt)} USDT/G$</div><div class="muted">Total ${Number(l.total_gd).toLocaleString()} G$ · ${l.status}</div></div>
-        ${l.status==='active'?`<button class="btn btn-outline btn-sm" onclick="cancelAd(${l.id},${l.onchain_id})">Cancel ad</button>`:''}
-        </div></div>`).join('');
+    box.innerHTML=mine.map(l=>{
+        const avail = Number(l.available_gd!==undefined ? l.available_gd : l.total_gd);
+        const status = avail <= 0 && l.status === 'active' ? 'closed' : l.status;
+        return `<div class="listing"><div class="row" style="justify-content:space-between">
+            <div><div class="price">${Number(l.price_usdt)} USDT/G$</div><div class="muted">Total ${Number(l.total_gd).toLocaleString()} G$ · Available ${avail.toLocaleString()} G$ · ${status}</div></div>
+            ${status==='active'?`<button class="btn btn-outline btn-sm" onclick="cancelAd(${l.id},${l.onchain_id})">Cancel ad</button>`:''}
+            </div></div>`;
+    }).join('');
 }
 async function cancelAd(id,onchain){
     try{ showAlert('info','<span class="spinner"></span> Confirm cancel in wallet…');
@@ -421,13 +426,18 @@ async function loadOrders(role){
     }
     if(role==='seller') updateSellerReviewBadge(paidForReview.length);
     if(!res.success||!orders.length){ box.innerHTML='<div class="empty">No orders.</div>'; return; }
-    box.innerHTML=orders.map(o=>`<div class="listing"><div class="row" style="justify-content:space-between">
-        <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
-        <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div>
-        ${role==='seller'&&o.status==='paid'?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
-        <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
-        <div style="margin-top:.4rem"><button type="button" class="btn ${role==='seller'&&o.status==='paid'?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${role==='seller'&&o.status==='paid'?'Review':'Open'}</button></div></div>
-        </div></div>`).join('');
+    box.innerHTML=orders.map(o=>{
+        const needsReview = role==='seller' && o.status==='paid';
+        const terminal = ['released','owner_released','cancelled','owner_refunded'].includes(o.status);
+        const buttonLabel = needsReview ? 'Review' : (terminal ? 'View' : 'Continue');
+        return `<div class="listing"><div class="row" style="justify-content:space-between">
+            <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
+            <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div>
+            ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
+            <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
+            <div style="margin-top:.4rem"><button type="button" class="btn ${needsReview?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${buttonLabel}</button></div></div>
+            </div></div>`;
+    }).join('');
 }
 function updateSellerReviewBadge(count){
     const badge=document.getElementById('sellerReviewCount');
@@ -452,7 +462,7 @@ async function openOrderRoom(orderId){
         : '<span class="muted">Seller has not listed payment details. Message them in chat before paying.</span>';
     let actions='';
     if(isBuyer){
-        if(o.status==='open'||o.status==='paid'){
+        if(o.status==='open'){
             actions+=`<button type="button" class="btn btn-primary btn-sm" onclick="markPaid(${o.id},${o.onchain_id})">I've paid (mark paid)</button>`;
             actions+=`<label class="btn btn-outline btn-sm" style="cursor:pointer">Upload proof<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label>`;
             actions+=`<button type="button" class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
@@ -470,7 +480,7 @@ async function openOrderRoom(orderId){
         ${isBuyer?buyerNextSteps(o, proofs):''}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
-        <div><strong>Proof of payment</strong>${isBuyer&&(o.status==='open'||o.status==='paid')?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
+        <div><strong>Proof of payment</strong>${isBuyer&&o.status==='open'?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
         <div style="margin-top:.7rem"><strong>Chat</strong>
         <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
         <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
@@ -487,7 +497,9 @@ async function markPaid(id,onchain){
         const res=await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({})});
         if(!res.success) throw new Error(res.error||'Could not notify the seller. Please refresh and try again.');
         roomAlert('success','Marked paid. The seller can now review your proof and approve or reject.');
-        openOrderRoom(id);
+        setTimeout(()=>closeModal('orderModal'), 700);
+        loadOrders(currentOrderRole);
+        refreshSellerReviewBadge();
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function uploadProof(id,input){
