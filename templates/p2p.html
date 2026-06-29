@@ -138,7 +138,7 @@
                 <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
             </div>
             <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Payment instructions buyers will see"></textarea></div>
-            <button class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
+            <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
         </div>
 
         <div class="card">
@@ -156,7 +156,7 @@
                 </select>
                 <input id="pmLabel" placeholder="Label e.g. GCash" style="max-width:180px">
                 <input id="pmDetails" placeholder="Account no / address">
-                <button class="btn btn-outline btn-sm" id="addPmBtn">Add</button>
+                <button type="button" class="btn btn-outline btn-sm" id="addPmBtn">Add</button>
             </div>
             <div id="myPms" style="margin-top:.6rem"></div>
         </div>
@@ -169,8 +169,8 @@
         <div class="card row" style="justify-content:space-between">
             <strong>My orders</strong>
             <div class="row">
-                <button class="btn btn-outline btn-sm" id="ordBuyer">As buyer</button>
-                <button class="btn btn-outline btn-sm" id="ordSeller">As seller</button>
+                <button type="button" class="btn btn-outline btn-sm" id="ordBuyer">As buyer</button>
+                <button type="button" class="btn btn-outline btn-sm" id="ordSeller">As seller</button>
             </div>
         </div>
         <div id="ordersList"><div class="empty">…</div></div>
@@ -223,7 +223,15 @@ const EVENT_ABI = [
 function gd(x){ return ethers.parseUnits(String(x), 18); }
 function shortAddr(a){ return a ? a.slice(0,6)+"…"+a.slice(-4) : ""; }
 function showAlert(type,msg){ const el=document.getElementById('globalAlert'); el.className='alert alert-'+type; el.innerHTML=msg; el.style.display='block'; if(type==='success') setTimeout(()=>el.style.display='none',6000); }
-function api(url,opts){ return fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opts)).then(r=>r.json()); }
+async function api(url,opts){
+    const res = await fetch(url,Object.assign({headers:{'Content-Type':'application/json'}},opts));
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {success:false,error:text || ('HTTP '+res.status)}; }
+    if(!res.ok && data && data.success === undefined) data.success = false;
+    if(!res.ok && data && !data.error) data.error = 'HTTP '+res.status;
+    return data;
+}
 function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isNaN(d.getTime())) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
@@ -401,7 +409,7 @@ async function loadOrders(role){
         <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
         <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div></div>
         <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
-        <div style="margin-top:.4rem"><button class="btn btn-outline btn-sm" onclick="openOrderRoom(${o.id})">Open</button></div></div>
+        <div style="margin-top:.4rem"><button type="button" class="btn btn-outline btn-sm" onclick="openOrderRoom(${o.id})">Open</button></div></div>
         </div></div>`).join('');
 }
 
@@ -417,18 +425,18 @@ async function openOrderRoom(orderId){
     let actions='';
     if(isBuyer){
         if(o.status==='open'||o.status==='paid'){
-            actions+=`<button class="btn btn-primary btn-sm" onclick="markPaid(${o.id},${o.onchain_id})">I've paid (mark paid)</button>`;
+            actions+=`<button type="button" class="btn btn-primary btn-sm" onclick="markPaid(${o.id},${o.onchain_id})">I've paid (mark paid)</button>`;
             actions+=`<label class="btn btn-outline btn-sm" style="cursor:pointer">Upload proof<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label>`;
-            actions+=`<button class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
+            actions+=`<button type="button" class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
         }
     }
     if(isSeller && (o.status==='open'||o.status==='paid')){
-        actions+=`<button class="btn btn-green btn-sm" onclick="sellerApprove(${o.id},${o.onchain_id})">Approve &amp; Release</button>`;
-        actions+=`<button class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
+        actions+=`<button type="button" class="btn btn-green btn-sm" onclick="sellerApprove(${o.id},${o.onchain_id})">Approve &amp; Release</button>`;
+        actions+=`<button type="button" class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
     }
     const body=document.getElementById('orderModalBody');
     body.innerHTML=`<div class="row" style="justify-content:space-between"><h3>Order #${o.id} <span class="badge badge-${o.status}">${o.status}</span></h3>
-        <button class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
         Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
         ${isBuyer?buyerNextSteps(o, proofs):''}
@@ -437,7 +445,7 @@ async function openOrderRoom(orderId){
         <div><strong>Proof of payment</strong>${isBuyer&&(o.status==='open'||o.status==='paid')?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div>
         <div style="margin-top:.7rem"><strong>Chat</strong>
         <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
-        <div class="row"><input id="chatInput" placeholder="Message…"><button class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
+        <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
         <div id="roomAlert" class="alert"></div>
         <div class="row" style="margin-top:.7rem">${actions}</div>`;
     document.getElementById('orderModal').classList.add('open');
@@ -448,18 +456,33 @@ function roomAlert(t,m){ const el=document.getElementById('roomAlert'); el.class
 async function markPaid(id,onchain){
     try{ roomAlert('info','<span class="spinner"></span> Confirm in wallet…');
         const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_MARKPAID, [onchain]);
-        await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({paid_tx_hash:tx})});
-        roomAlert('success','Marked paid. '+scan(tx)); openOrderRoom(id);
+        const res=await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({paid_tx_hash:tx})});
+        if(!res.success) throw new Error(res.error||'Marked paid on-chain, but the app could not notify the seller. Please refresh and try again.');
+        roomAlert('success','Marked paid. The seller can now review your proof. '+scan(tx)); openOrderRoom(id);
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function uploadProof(id,input){
-    if(!input.files.length) return;
-    const fd=new FormData(); fd.append('image',input.files[0]);
+    if(!input || !input.files || !input.files.length) return;
+    const file = input.files[0];
+    const fd=new FormData(); fd.append('image',file);
     const refEl=document.getElementById('proofReference');
     if(refEl && refEl.value.trim()) fd.append('reference', refEl.value.trim());
-    roomAlert('info','<span class="spinner"></span> Uploading proof…');
-    const r=await fetch('/p2p/api/orders/'+id+'/proof',{method:'POST',body:fd}).then(x=>x.json());
-    if(r.success){ roomAlert('success','Proof uploaded.'); openOrderRoom(id); } else roomAlert('error',r.error||'Upload failed');
+    input.disabled = true;
+    roomAlert('info','<span class="spinner"></span> Uploading proof… Please keep this window open.');
+    try{
+        const res = await fetch('/p2p/api/orders/'+id+'/proof',{method:'POST',body:fd});
+        const text = await res.text();
+        let r;
+        try { r = text ? JSON.parse(text) : {}; } catch (_) { throw new Error(text || ('Upload failed with HTTP '+res.status)); }
+        if(!res.ok || !r.success) throw new Error(r.error||('Upload failed with HTTP '+res.status));
+        roomAlert('success','Proof uploaded. The seller can now see it for approval/rejection.');
+        await openOrderRoom(id);
+    }catch(e){
+        input.disabled = false;
+        roomAlert('error','❌ '+(e.message||'Upload failed'));
+    }finally{
+        input.value = '';
+    }
 }
 async function cancelOrder(id,onchain){
     try{ roomAlert('info','<span class="spinner"></span> Confirm cancel…');
@@ -471,7 +494,8 @@ async function cancelOrder(id,onchain){
 async function sellerApprove(id,onchain){
     try{ roomAlert('info','<span class="spinner"></span> Sign releaseOrder…');
         const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_RELEASE, [onchain]);
-        await api('/p2p/api/orders/'+id+'/approve',{method:'POST',body:JSON.stringify({release_tx_hash:tx})});
+        const res=await api('/p2p/api/orders/'+id+'/approve',{method:'POST',body:JSON.stringify({release_tx_hash:tx})});
+        if(!res.success) throw new Error(res.error||'Released on-chain, but failed to update the order.');
         roomAlert('success','Released to buyer. '+scan(tx)); openOrderRoom(id);
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
