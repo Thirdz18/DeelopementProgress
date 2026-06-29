@@ -123,6 +123,11 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         # NOT NULL constraints from rejecting new orders.
         "fiat_amount": pay_amount,
         "pay_currency": pay_currency,
+        # Backward compatibility: some early P2P deployments used
+        # `fiat_currency` for the order payment currency before the current
+        # `pay_currency` name was standardized. Supplying both prevents
+        # legacy NOT NULL constraints from rejecting new USDT orders.
+        "fiat_currency": pay_currency,
         "payment_method_id": payment_method_id,
         "status": "open",
         "deadline": deadline.isoformat(),
@@ -131,6 +136,7 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
     legacy_aliases = {
         "g_dollar_amount": "amount_gd",
         "fiat_amount": "pay_amount",
+        "fiat_currency": "pay_currency",
     }
     while True:
         try:
