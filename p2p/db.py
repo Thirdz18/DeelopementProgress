@@ -21,6 +21,17 @@ def _reader():
     return get_supabase_client()
 
 
+def _private_reader():
+    """Read private P2P rows through the service-role client when available.
+
+    P2P order, proof, chat, and dispute tables have RLS enabled because the
+    parties are wallet-authenticated by Flask sessions rather than Supabase
+    Auth users. Route handlers perform the wallet/party checks before returning
+    rows, so these backend reads need to bypass Supabase RLS just like writes.
+    """
+    return get_supabase_admin_client() or get_supabase_client()
+
+
 def _norm(addr):
     return (addr or "").strip().lower()
 
@@ -221,14 +232,14 @@ def update_order(order_id, fields):
 
 
 def get_order_row(order_id):
-    res = _reader().table("p2p_orders").select("*").eq("id", order_id).limit(1).execute()
+    res = _private_reader().table("p2p_orders").select("*").eq("id", order_id).limit(1).execute()
     return res.data[0] if res.data else None
 
 
 def list_orders_for_wallet(wallet, role="buyer", limit=100):
     col = "seller_wallet" if role == "seller" else "buyer_wallet"
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_orders")
         .select("*")
         .eq(col, _norm(wallet))
@@ -244,7 +255,7 @@ def list_expired_open_orders(now_iso=None, limit=100):
     auto-expiry/refund)."""
     now_iso = now_iso or datetime.now(timezone.utc).isoformat()
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_orders")
         .select("*")
         .eq("status", "open")
@@ -259,7 +270,7 @@ def list_expired_open_orders(now_iso=None, limit=100):
 def list_open_or_paid_orders(limit=300):
     """Active orders (open|paid) used by the reconciler to sync on-chain state."""
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_orders")
         .select("*")
         .in_("status", ["open", "paid"])
@@ -272,7 +283,7 @@ def list_open_or_paid_orders(limit=300):
 
 def list_orders_by_status(statuses, limit=200):
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_orders")
         .select("*")
         .in_("status", statuses)
@@ -292,7 +303,7 @@ def add_message(order_id, sender_wallet, body):
 
 def list_messages(order_id, limit=500):
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_messages")
         .select("*")
         .eq("order_id", order_id)
@@ -317,7 +328,7 @@ def add_proof(order_id, uploader_wallet, image_url, reference=None):
 
 def list_proofs(order_id):
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_proofs")
         .select("*")
         .eq("order_id", order_id)
@@ -347,7 +358,7 @@ def resolve_dispute_row(dispute_id, status, resolved_by, resolve_tx_hash=None):
 
 def get_open_dispute_for_order(order_id):
     res = (
-        _reader()
+        _private_reader()
         .table("p2p_disputes")
         .select("*")
         .eq("order_id", order_id)
