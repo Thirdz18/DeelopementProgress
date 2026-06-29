@@ -69,6 +69,9 @@
         .step-done { color:#6ee7b7; font-weight:700; }
         .step-current { color:#fcd34d; font-weight:800; }
         .deadline-pill { display:inline-block; background:rgba(245,158,11,.12); color:#fcd34d; border:1px solid rgba(245,158,11,.25); border-radius:999px; padding:.15rem .5rem; font-size:.72rem; font-weight:700; margin-top:.25rem; }
+        .review-callout { display:none; background:rgba(245,158,11,.11); border:1px solid rgba(245,158,11,.26); color:#fde68a; border-radius:12px; padding:.8rem 1rem; margin-bottom:.8rem; font-size:.86rem; }
+        .review-callout strong { color:#fff7ed; }
+        .tab-count { display:none; margin-left:.35rem; background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.30); border-radius:999px; padding:.05rem .4rem; font-size:.68rem; font-weight:800; }
     </style>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
@@ -107,7 +110,7 @@
     <div class="tabs">
         <button class="tab-btn active" data-tab="buy">Buy G$</button>
         <button class="tab-btn" data-tab="sell">Sell (My Ads)</button>
-        <button class="tab-btn" data-tab="orders">My Orders</button>
+        <button class="tab-btn" data-tab="orders">My Orders <span class="tab-count" id="sellerReviewCount"></span></button>
         {% if is_admin_user %}<button class="tab-btn" data-tab="admin">Admin Review</button>{% endif %}
     </div>
 
@@ -173,6 +176,7 @@
                 <button type="button" class="btn btn-outline btn-sm" id="ordSeller">As seller</button>
             </div>
         </div>
+        <div id="sellerReviewNotice" class="review-callout"></div>
         <div id="ordersList"><div class="empty">…</div></div>
     </div>
 
@@ -209,7 +213,6 @@ P2PWallet.configure({ wallet: WALLET, chainId: CHAIN_ID });
 const ABI_APPROVE   = "function approve(address spender, uint256 amount) returns (bool)";
 const ABI_CREATE    = "function createListing(uint256 amount, uint256 minOrder) returns (uint256)";
 const ABI_OPEN      = "function openOrder(uint256 listingId, uint256 amount) returns (uint256)";
-const ABI_MARKPAID  = "function markPaid(uint256 orderId)";
 const ABI_RELEASE   = "function releaseOrder(uint256 orderId)";
 const ABI_CANCEL_O  = "function cancelOrder(uint256 orderId)";
 const ABI_CANCEL_L  = "function cancelListing(uint256 listingId)";
@@ -238,13 +241,12 @@ function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isN
 function buyerNextSteps(o, proofs){
     const hasProof = proofs && proofs.length;
     const paid = ['paid','released','owner_released'].includes(o.status);
-    const released = ['released','owner_released'].includes(o.status);
     const deadline = formatDeadline(o.deadline);
     return `<div class="next-steps"><strong>Buyer next steps</strong>${deadline&&!paid?`<div class="deadline-pill">Pay before ${deadline}</div>`:''}<ol>
         <li class="step-done">G$ reserved in escrow.</li>
         <li class="${paid?'step-done':'step-current'}">Send the off-chain payment to the seller using the payment details below.</li>
         <li class="${hasProof?'step-done':(paid?'step-current':'')}">Upload a screenshot/receipt and optional reference number.</li>
-        <li class="${released?'step-done':''}">Tap <strong>I've paid</strong> so the seller can approve and release your G$.</li>
+        <li class="${paid?'step-done':(hasProof?'step-current':'')}">Tap <strong>I've paid</strong> to notify the seller for approval or rejection.</li>
     </ol></div>`;
 }
 
@@ -403,14 +405,40 @@ let currentOrderRole='buyer';
 document.getElementById('ordBuyer').onclick=()=>{currentOrderRole='buyer';loadOrders('buyer');};
 document.getElementById('ordSeller').onclick=()=>{currentOrderRole='seller';loadOrders('seller');};
 async function loadOrders(role){
-    const res=await api('/p2p/api/orders?role='+role); const box=document.getElementById('ordersList');
-    if(!res.success||!res.orders.length){ box.innerHTML='<div class="empty">No orders.</div>'; return; }
-    box.innerHTML=res.orders.map(o=>`<div class="listing"><div class="row" style="justify-content:space-between">
+    const res=await api('/p2p/api/orders?role='+role);
+    const box=document.getElementById('ordersList');
+    const notice=document.getElementById('sellerReviewNotice');
+    const orders=(res.success&&res.orders)||[];
+    const paidForReview=orders.filter(o=>o.status==='paid');
+    if(notice){
+        if(role==='seller' && paidForReview.length){
+            notice.style.display='block';
+            notice.innerHTML=`<strong>${paidForReview.length} order${paidForReview.length>1?'s':''} waiting for your review.</strong> Open the paid order below to approve/release G$ or reject to admin review.`;
+        }else{
+            notice.style.display='none';
+            notice.innerHTML='';
+        }
+    }
+    if(role==='seller') updateSellerReviewBadge(paidForReview.length);
+    if(!res.success||!orders.length){ box.innerHTML='<div class="empty">No orders.</div>'; return; }
+    box.innerHTML=orders.map(o=>`<div class="listing"><div class="row" style="justify-content:space-between">
         <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
-        <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div></div>
+        <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div>
+        ${role==='seller'&&o.status==='paid'?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
         <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
-        <div style="margin-top:.4rem"><button type="button" class="btn btn-outline btn-sm" onclick="openOrderRoom(${o.id})">Open</button></div></div>
+        <div style="margin-top:.4rem"><button type="button" class="btn ${role==='seller'&&o.status==='paid'?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${role==='seller'&&o.status==='paid'?'Review':'Open'}</button></div></div>
         </div></div>`).join('');
+}
+function updateSellerReviewBadge(count){
+    const badge=document.getElementById('sellerReviewCount');
+    if(!badge) return;
+    badge.textContent=count?String(count):'';
+    badge.style.display=count?'inline-block':'none';
+}
+async function refreshSellerReviewBadge(){
+    const res=await api('/p2p/api/orders?role=seller');
+    if(!res.success) return;
+    updateSellerReviewBadge((res.orders||[]).filter(o=>o.status==='paid').length);
 }
 
 async function openOrderRoom(orderId){
@@ -430,7 +458,7 @@ async function openOrderRoom(orderId){
             actions+=`<button type="button" class="btn btn-outline btn-sm" onclick="cancelOrder(${o.id},${o.onchain_id})">Cancel</button>`;
         }
     }
-    if(isSeller && (o.status==='open'||o.status==='paid')){
+    if(isSeller && o.status==='paid'){
         actions+=`<button type="button" class="btn btn-green btn-sm" onclick="sellerApprove(${o.id},${o.onchain_id})">Approve &amp; Release</button>`;
         actions+=`<button type="button" class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
     }
@@ -442,7 +470,7 @@ async function openOrderRoom(orderId){
         ${isBuyer?buyerNextSteps(o, proofs):''}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
-        <div><strong>Proof of payment</strong>${isBuyer&&(o.status==='open'||o.status==='paid')?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div>
+        <div><strong>Proof of payment</strong>${isBuyer&&(o.status==='open'||o.status==='paid')?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
         <div style="margin-top:.7rem"><strong>Chat</strong>
         <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
         <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
@@ -454,11 +482,12 @@ async function openOrderRoom(orderId){
 function roomAlert(t,m){ const el=document.getElementById('roomAlert'); el.className='alert alert-'+t; el.style.display='block'; el.innerHTML=m; }
 
 async function markPaid(id,onchain){
-    try{ roomAlert('info','<span class="spinner"></span> Confirm in wallet…');
-        const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_MARKPAID, [onchain]);
-        const res=await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({paid_tx_hash:tx})});
-        if(!res.success) throw new Error(res.error||'Marked paid on-chain, but the app could not notify the seller. Please refresh and try again.');
-        roomAlert('success','Marked paid. The seller can now review your proof. '+scan(tx)); openOrderRoom(id);
+    try{
+        roomAlert('info','<span class="spinner"></span> Notifying seller…');
+        const res=await api('/p2p/api/orders/'+id+'/mark-paid',{method:'POST',body:JSON.stringify({})});
+        if(!res.success) throw new Error(res.error||'Could not notify the seller. Please refresh and try again.');
+        roomAlert('success','Marked paid. The seller can now review your proof and approve or reject.');
+        openOrderRoom(id);
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function uploadProof(id,input){
@@ -475,8 +504,12 @@ async function uploadProof(id,input){
         let r;
         try { r = text ? JSON.parse(text) : {}; } catch (_) { throw new Error(text || ('Upload failed with HTTP '+res.status)); }
         if(!res.ok || !r.success) throw new Error(r.error||('Upload failed with HTTP '+res.status));
-        roomAlert('success','Proof uploaded. The seller can now see it for approval/rejection.');
-        await openOrderRoom(id);
+        const proofList = document.getElementById('proofList');
+        if(proofList && r.proof){
+            const ref = r.proof.reference ? `<div class="muted">Ref: ${escapeHtml(r.proof.reference)}</div>` : '';
+            proofList.innerHTML = `<div><img class="proof-img" src="${escapeHtml(r.proof.image_url)}">${ref}</div>` + proofList.innerHTML.replace('<div class="muted">None uploaded yet</div>','');
+        }
+        roomAlert('success','Proof uploaded. Click Mark as paid when you are ready to notify the seller.');
     }catch(e){
         input.disabled = false;
         roomAlert('error','❌ '+(e.message||'Upload failed'));
@@ -496,13 +529,13 @@ async function sellerApprove(id,onchain){
         const tx=await P2PWallet.sendTx(P2P_CONTRACT, ABI_RELEASE, [onchain]);
         const res=await api('/p2p/api/orders/'+id+'/approve',{method:'POST',body:JSON.stringify({release_tx_hash:tx})});
         if(!res.success) throw new Error(res.error||'Released on-chain, but failed to update the order.');
-        roomAlert('success','Released to buyer. '+scan(tx)); openOrderRoom(id);
+        roomAlert('success','Released to buyer. '+scan(tx)); refreshSellerReviewBadge(); if(currentOrderRole==='seller') loadOrders('seller'); openOrderRoom(id);
     }catch(e){ roomAlert('error','❌ '+(e.message||e)); }
 }
 async function sellerReject(id){
     const reason=prompt('Reason for rejecting this proof (sent to admin review):')||'';
     const r=await api('/p2p/api/orders/'+id+'/reject',{method:'POST',body:JSON.stringify({reason})});
-    if(r.success){ roomAlert('success','Rejected. Escalated to admin review.'); openOrderRoom(id); } else roomAlert('error',r.error||'Failed');
+    if(r.success){ roomAlert('success','Rejected. Escalated to admin review.'); refreshSellerReviewBadge(); if(currentOrderRole==='seller') loadOrders('seller'); openOrderRoom(id); } else roomAlert('error',r.error||'Failed');
 }
 async function sendMsg(id){
     const inp=document.getElementById('chatInput'); const body=inp.value.trim(); if(!body) return;
@@ -543,6 +576,7 @@ document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{ if(e.target===m) m
 
 // init
 loadListings();
+refreshSellerReviewBadge();
 </script>
 </body>
 </html>
