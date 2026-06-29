@@ -91,6 +91,7 @@ ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS listing_onchain_id BIGINT;
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS buyer_wallet       VARCHAR(42);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS seller_wallet      VARCHAR(42);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS amount_gd          NUMERIC;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS g_dollar_amount    NUMERIC; -- legacy alias used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_amount         NUMERIC;
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_currency       VARCHAR(8);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS payment_method_id  BIGINT;
@@ -104,10 +105,16 @@ ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS release_tx_hash    VARCHAR(66);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS created_at         TIMESTAMPTZ DEFAULT now();
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ DEFAULT now();
 
--- Backward compatibility for early P2P deployments that created a separate
--- p2p_orders.order_id column. The app now uses p2p_orders.id as the local DB
--- primary key and p2p_orders.onchain_id for the escrow contract order id, so a
--- legacy NOT NULL constraint on order_id prevents new orders from being saved.
+-- Backward compatibility for early P2P deployments that created separate/old
+-- P2P order columns. The app now uses p2p_orders.id as the local DB primary key,
+-- p2p_orders.onchain_id for the escrow contract order id, and amount_gd for the
+-- reserved G$ amount. Legacy NOT NULL constraints on old columns prevent new
+-- orders from being saved, so relax them and keep the legacy amount populated.
+UPDATE p2p_orders
+SET amount_gd = COALESCE(amount_gd, g_dollar_amount),
+    g_dollar_amount = COALESCE(g_dollar_amount, amount_gd)
+WHERE amount_gd IS NULL OR g_dollar_amount IS NULL;
+
 DO $$
 BEGIN
     IF EXISTS (
@@ -118,6 +125,16 @@ BEGIN
           AND column_name = 'order_id'
     ) THEN
         ALTER TABLE p2p_orders ALTER COLUMN order_id DROP NOT NULL;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'p2p_orders'
+          AND column_name = 'g_dollar_amount'
+    ) THEN
+        ALTER TABLE p2p_orders ALTER COLUMN g_dollar_amount DROP NOT NULL;
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_buyer ON p2p_orders(buyer_wallet);
