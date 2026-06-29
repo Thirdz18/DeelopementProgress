@@ -228,8 +228,20 @@ def _send_owner_tx(fn_name, *args):
 
 
 def owner_release_order(order_id):
-    """Admin review: release escrowed G$ to the buyer (proof verified genuine)."""
-    return _send_owner_tx("releaseOrderByOwner", int(order_id))
+    """Admin review: release escrowed G$ to the buyer (proof verified genuine).
+
+    Seller-rejected orders may already be disputed on-chain if a party clicked
+    the dispute action before admin review. The escrow contract's
+    releaseOrderByOwner() intentionally only handles Open/Paid orders, while
+    Disputed orders must be completed through resolveDispute(orderId, true).
+    Pick the correct contract entrypoint up front so admin "Release to buyer"
+    works for both normal seller-rejected and disputed review rows.
+    """
+    order_id = int(order_id)
+    onchain_order = get_order(order_id)
+    if onchain_order and onchain_order.get("status_code") == 5:
+        return _send_owner_tx("resolveDispute", order_id, True)
+    return _send_owner_tx("releaseOrderByOwner", order_id)
 
 
 def owner_refund_order(order_id):
