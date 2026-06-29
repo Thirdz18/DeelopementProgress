@@ -278,8 +278,13 @@ async function loadListings(){
 
 async function openBuyModal(l){
     const pms = await api('/p2p/api/payment-methods?seller='+l.seller_wallet);
-    const pmHtml = (pms.success&&pms.payment_methods.length)
-        ? pms.payment_methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join('')
+    const paymentMethods = (pms.success&&pms.payment_methods.length) ? pms.payment_methods : [];
+    const pmHtml = paymentMethods.length
+        ? `<div class="muted" style="margin-bottom:.35rem">Choose where you will pay the seller:</div>${paymentMethods.map((p,i)=>{
+            const detail=(p.details&&(p.details.account||p.details.address||p.details.number))||'';
+            const text=`${p.label||p.kind}${detail?': '+detail:''}`;
+            return `<label class="pm-tag" style="cursor:pointer"><input type="radio" name="buyPaymentMethod" value="${p.id}" ${i===0?'checked':''}> ${escapeHtml(text)}</label>`;
+        }).join('')}`
         : '<span class="muted">No payment methods listed</span>';
     const body=document.getElementById('buyModalBody');
     body.innerHTML=`<h3 style="margin-bottom:.6rem">Buy G$ from ${shortAddr(l.seller_wallet)}</h3>
@@ -317,7 +322,9 @@ async function doOpenOrder(l){
         al.innerHTML='<span class="spinner"></span> Order reserved on-chain. Recording… '+scan(tx);
         const ev=await P2PWallet.decodeEvent(tx, EVENT_ABI, 'OrderOpened');
         const onchainId = ev? Number(ev.orderId): null;
-        const res=await api('/p2p/api/orders',{method:'POST',body:JSON.stringify({listing_id:l.id, onchain_id:onchainId, amount_gd:amt, open_tx_hash:tx})});
+        const selectedPm=document.querySelector('input[name="buyPaymentMethod"]:checked');
+        const paymentMethodId=selectedPm ? Number(selectedPm.value) : null;
+        const res=await api('/p2p/api/orders',{method:'POST',body:JSON.stringify({listing_id:l.id, onchain_id:onchainId, amount_gd:amt, payment_method_id:paymentMethodId, open_tx_hash:tx})});
         if(!res.success) throw new Error(res.error||'Failed to record order');
         closeModal('buyModal');
         document.querySelector('[data-tab="orders"]').click();

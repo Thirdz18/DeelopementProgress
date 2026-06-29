@@ -97,6 +97,7 @@ ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS fiat_amount        NUMERIC; -- l
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_currency       VARCHAR(8);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS fiat_currency      VARCHAR(8); -- legacy alias used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS payment_method_id  BIGINT;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS payment_method     TEXT; -- legacy text column used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS status             VARCHAR(20) DEFAULT 'open';
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS reject_reason      TEXT;
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS reviewed_by        VARCHAR(42);
@@ -119,13 +120,15 @@ SET amount_gd = COALESCE(amount_gd, g_dollar_amount),
     pay_amount = COALESCE(pay_amount, fiat_amount),
     fiat_amount = COALESCE(fiat_amount, pay_amount),
     pay_currency = COALESCE(pay_currency, fiat_currency, 'USDT'),
-    fiat_currency = COALESCE(fiat_currency, pay_currency, 'USDT')
+    fiat_currency = COALESCE(fiat_currency, pay_currency, 'USDT'),
+    payment_method = COALESCE(payment_method, 'Not specified')
 WHERE amount_gd IS NULL
    OR g_dollar_amount IS NULL
    OR pay_amount IS NULL
    OR fiat_amount IS NULL
    OR pay_currency IS NULL
-   OR fiat_currency IS NULL;
+   OR fiat_currency IS NULL
+   OR payment_method IS NULL;
 
 DO $$
 BEGIN
@@ -167,6 +170,16 @@ BEGIN
           AND column_name = 'fiat_currency'
     ) THEN
         ALTER TABLE p2p_orders ALTER COLUMN fiat_currency DROP NOT NULL;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'p2p_orders'
+          AND column_name = 'payment_method'
+    ) THEN
+        ALTER TABLE p2p_orders ALTER COLUMN payment_method DROP NOT NULL;
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_p2p_orders_buyer ON p2p_orders(buyer_wallet);
