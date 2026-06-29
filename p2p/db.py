@@ -148,6 +148,12 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         # those databases are migrated.
         "g_dollar_amount": amount_gd,
         "pay_amount": pay_amount,
+        # Backward compatibility: an early P2P order schema used a NOT NULL
+        # `rate` column for the listing's USDT-per-G$ price. Current schemas
+        # store that value on p2p_listings.price_usdt, but include it here so
+        # legacy databases can still record the order mirror after the buyer
+        # reserves funds on-chain.
+        "rate": listing_row.get("price_usdt"),
         # Backward compatibility: some early P2P deployments used
         # `fiat_amount` for the off-chain payment total before the current
         # `pay_amount` name was standardized. Supplying both prevents legacy
@@ -173,6 +179,7 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         "fiat_amount": "pay_amount",
         "fiat_currency": "pay_currency",
         "payment_method": "payment_method_id",
+        "rate": "price_usdt",
     }
     while True:
         try:

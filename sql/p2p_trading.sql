@@ -93,6 +93,7 @@ ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS seller_wallet      VARCHAR(42);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS amount_gd          NUMERIC;
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS g_dollar_amount    NUMERIC; -- legacy alias used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_amount         NUMERIC;
+ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS rate               NUMERIC; -- legacy USDT-per-G$ rate used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS fiat_amount        NUMERIC; -- legacy alias used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_currency       VARCHAR(8);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS fiat_currency      VARCHAR(8); -- legacy alias used by early deployments
@@ -118,6 +119,7 @@ UPDATE p2p_orders
 SET amount_gd = COALESCE(amount_gd, g_dollar_amount),
     g_dollar_amount = COALESCE(g_dollar_amount, amount_gd),
     pay_amount = COALESCE(pay_amount, fiat_amount),
+    rate = COALESCE(rate, CASE WHEN amount_gd IS NOT NULL AND amount_gd <> 0 THEN pay_amount / amount_gd ELSE NULL END),
     fiat_amount = COALESCE(fiat_amount, pay_amount),
     pay_currency = COALESCE(pay_currency, fiat_currency, 'USDT'),
     fiat_currency = COALESCE(fiat_currency, pay_currency, 'USDT'),
@@ -125,6 +127,7 @@ SET amount_gd = COALESCE(amount_gd, g_dollar_amount),
 WHERE amount_gd IS NULL
    OR g_dollar_amount IS NULL
    OR pay_amount IS NULL
+   OR rate IS NULL
    OR fiat_amount IS NULL
    OR pay_currency IS NULL
    OR fiat_currency IS NULL
@@ -150,6 +153,16 @@ BEGIN
           AND column_name = 'g_dollar_amount'
     ) THEN
         ALTER TABLE p2p_orders ALTER COLUMN g_dollar_amount DROP NOT NULL;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'p2p_orders'
+          AND column_name = 'rate'
+    ) THEN
+        ALTER TABLE p2p_orders ALTER COLUMN rate DROP NOT NULL;
     END IF;
 
     IF EXISTS (
