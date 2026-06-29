@@ -117,24 +117,39 @@ def create_order(listing_row, buyer_wallet, amount_gd, pay_amount, pay_currency,
         # those databases are migrated.
         "g_dollar_amount": amount_gd,
         "pay_amount": pay_amount,
+        # Backward compatibility: some early P2P deployments used
+        # `fiat_amount` for the off-chain payment total before the current
+        # `pay_amount` name was standardized. Supplying both prevents legacy
+        # NOT NULL constraints from rejecting new orders.
+        "fiat_amount": pay_amount,
         "pay_currency": pay_currency,
         "payment_method_id": payment_method_id,
         "status": "open",
         "deadline": deadline.isoformat(),
         "open_tx_hash": open_tx_hash,
     }
-    try:
-        res = _writer().table("p2p_orders").insert(row).execute()
-    except Exception as exc:
-        # Fresh/current schemas may not have the legacy alias column. Retry
-        # without it only for that specific schema-cache error; legacy schemas
-        # with a NOT NULL g_dollar_amount still succeed on the first attempt.
-        if "g_dollar_amount" not in str(exc) or "schema cache" not in str(exc).lower():
-            raise
-        logger.info("p2p_orders.g_dollar_amount not present; retrying order insert without legacy alias")
-        row.pop("g_dollar_amount", None)
-        res = _writer().table("p2p_orders").insert(row).execute()
-    return res.data[0] if res.data else None
+    legacy_aliases = {
+        "g_dollar_amount": "amount_gd",
+        "fiat_amount": "pay_amount",
+    }
+    while True:
+        try:
+            res = _writer().table("p2p_orders").insert(row).execute()
+            return res.data[0] if res.data else None
+        except Exception as exc:
+            message = str(exc)
+            # Fresh/current schemas may not have one or more legacy alias
+            # columns. Retry without only the missing alias named by the
+            # PostgREST schema-cache error; legacy schemas with NOT NULL
+            # aliases still succeed because those aliases remain populated.
+            missing_alias = next(
+                (alias for alias in legacy_aliases if alias in row and alias in message),
+                None,
+            )
+            if not missing_alias or "schema cache" not in message.lower():
+                raise
+            logger.info("p2p_orders.%s not present; retrying order insert without legacy alias", missing_alias)
+            row.pop(missing_alias, None)
 
 
 def update_order(order_id, fields):
