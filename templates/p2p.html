@@ -145,25 +145,8 @@
     <!-- SELL -->
     <div class="tab-panel" id="tab-sell">
         <div class="card">
-            <strong>Create a sell ad</strong>
-            <p class="muted" style="margin:.3rem 0 .8rem">
-                Lock {{ "{:,}".format(min_lock_gd) }}–{{ "{:,}".format(max_lock_gd) }} G$. You approve G$ to the escrow,
-                then sign <code>createListing</code>. Buyers pay you off-chain; you Approve to release.
-            </p>
-            <div class="grid2">
-                <div class="form-group"><label>Total G$ to lock</label><input id="sellAmount" type="number" placeholder="e.g. 50000"></div>
-                <div class="form-group"><label>Min order (G$)</label><input id="sellMinOrder" type="number" placeholder="e.g. 1000"></div>
-                <div class="form-group"><label>Price per G$ (USDT)</label><input id="sellPrice" type="number" step="0.000001" placeholder="e.g. 0.00012"></div>
-                <div class="form-group"><label>Fiat currency (optional)</label><input id="sellFiat" placeholder="e.g. PHP"></div>
-                <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
-            </div>
-            <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Payment instructions buyers will see"></textarea></div>
-            <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
-        </div>
-
-        <div class="card">
-            <strong>Payment methods</strong>
-            <p class="muted" style="margin:.3rem 0 .6rem">Buyers see these on your ads.</p>
+            <strong>Step 1: Add a payment method</strong>
+            <p class="muted" style="margin:.3rem 0 .6rem">Add where buyers should pay you first. Once at least one payment method is saved, the sell ad form will appear.</p>
             <div class="row">
                 <select id="pmKind" style="max-width:180px">
                     <option value="fiat_bank">Bank</option>
@@ -179,6 +162,23 @@
                 <button type="button" class="btn btn-outline btn-sm" id="addPmBtn">Add</button>
             </div>
             <div id="myPms" style="margin-top:.6rem"></div>
+        </div>
+
+        <div class="card" id="createSellAdCard" style="display:none">
+            <strong>Step 2: Create a sell ad</strong>
+            <p class="muted" style="margin:.3rem 0 .8rem">
+                Lock {{ "{:,}".format(min_lock_gd) }}–{{ "{:,}".format(max_lock_gd) }} G$. You approve G$ to the escrow,
+                then sign <code>createListing</code>. Buyers pay using your saved payment method; you Approve to release.
+            </p>
+            <div class="grid2">
+                <div class="form-group"><label>Total G$ to lock</label><input id="sellAmount" type="number" placeholder="e.g. 50000"></div>
+                <div class="form-group"><label>Min order (G$)</label><input id="sellMinOrder" type="number" placeholder="e.g. 1000"></div>
+                <div class="form-group"><label>Price per G$ (USDT)</label><input id="sellPrice" type="number" step="0.000001" placeholder="e.g. 0.00012"></div>
+                <div class="form-group"><label>Fiat currency (optional)</label><input id="sellFiat" placeholder="e.g. PHP"></div>
+                <div class="form-group"><label>Fiat rate per USDT (optional)</label><input id="sellFiatRate" type="number" step="0.0001" placeholder="e.g. 58"></div>
+            </div>
+            <div class="form-group"><label>Terms / notes (optional)</label><textarea id="sellTerms" rows="2" placeholder="Additional instructions buyers will see"></textarea></div>
+            <button type="button" class="btn btn-primary" id="createAdBtn" {% if not p2p_contract %}disabled{% endif %}>Approve &amp; Create Ad</button>
         </div>
 
         <div class="card"><strong>My ads</strong><div id="myAds"><div class="empty">…</div></div></div>
@@ -420,6 +420,7 @@ document.getElementById('createAdBtn').onclick=async function(){
     const fiat=document.getElementById('sellFiat').value.trim();
     const fiatRate=parseFloat(document.getElementById('sellFiatRate').value||'0')||null;
     const terms=document.getElementById('sellTerms').value.trim();
+    if(!(await sellerHasPaymentMethod())){ showAlert('error','Add a payment method first so buyers know where to pay you.'); return; }
     if(!amount||!price){ showAlert('error','Enter amount and price.'); return; }
     const btn=this; btn.disabled=true;
     try{
@@ -443,13 +444,20 @@ document.getElementById('addPmBtn').onclick=async function(){
     const label=document.getElementById('pmLabel').value.trim();
     const det=document.getElementById('pmDetails').value.trim();
     const res=await api('/p2p/api/payment-methods',{method:'POST',body:JSON.stringify({kind,label,details:{account:det,address:det}})});
-    if(res.success){ document.getElementById('pmLabel').value=''; document.getElementById('pmDetails').value=''; loadMyPms(); }
+    if(res.success){ document.getElementById('pmLabel').value=''; document.getElementById('pmDetails').value=''; loadMyPms(); showAlert('success','Payment method saved. You can now create a sell ad.'); }
     else showAlert('error',res.error||'Failed');
 };
+async function sellerHasPaymentMethod(){
+    const res=await api('/p2p/api/payment-methods?seller='+WALLET);
+    return !!(res.success && res.payment_methods && res.payment_methods.length);
+}
 async function loadMyPms(){
     const res=await api('/p2p/api/payment-methods?seller='+WALLET);
     const box=document.getElementById('myPms');
-    box.innerHTML=(res.success&&res.payment_methods.length)? res.payment_methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join(''):'<span class="muted">None yet</span>';
+    const createCard=document.getElementById('createSellAdCard');
+    const methods=(res.success&&res.payment_methods) ? res.payment_methods : [];
+    box.innerHTML=methods.length ? methods.map(p=>`<span class="pm-tag">${p.label||p.kind}: ${(p.details&&(p.details.account||p.details.address))||''}</span>`).join('') : '<span class="muted">No payment method yet. Add one to unlock sell ad creation.</span>';
+    if(createCard) createCard.style.display = methods.length ? 'block' : 'none';
 }
 async function loadMyAds(){
     const res=await api('/p2p/api/listings?seller='+WALLET+'&include_inactive=1'); const box=document.getElementById('myAds');
