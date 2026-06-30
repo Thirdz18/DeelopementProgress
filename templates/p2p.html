@@ -44,6 +44,8 @@
         .listing { background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.07); border-radius:12px; padding:1rem; margin-bottom:.7rem; }
         .listing .seller { font-family:monospace; color:#c4b5fd; font-size:.82rem; }
         .listing .price { font-size:1.15rem; font-weight:700; color:#fff; }
+        .order-meta { display:flex; flex-wrap:wrap; gap:.35rem .65rem; align-items:center; margin-top:.2rem; }
+        .order-date { color:rgba(255,255,255,.52); font-size:.78rem; }
         .badge { padding:.2rem .6rem; border-radius:20px; font-size:.7rem; font-weight:700; }
         .badge-open { background:rgba(245,158,11,.12); color:#fcd34d; }
         .badge-paid { background:rgba(99,102,241,.15); color:#a5b4fc; }
@@ -238,6 +240,18 @@ async function api(url,opts){
 function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isNaN(d.getTime())) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
+function formatOrderDate(v){
+    if(!v) return '';
+    const d = new Date(v);
+    if(Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+}
+function orderDateLabel(o){
+    const created = formatOrderDate(o.created_at);
+    const updated = formatOrderDate(o.updated_at);
+    if(created && updated && o.updated_at !== o.created_at) return `Opened ${created} · Updated ${updated}`;
+    return created ? `Opened ${created}` : '';
+}
 function buyerNextSteps(o, proofs){
     const hasProof = proofs && proofs.length;
     const paid = ['paid','released','owner_released'].includes(o.status);
@@ -430,9 +444,13 @@ async function loadOrders(role){
         const needsReview = role==='seller' && o.status==='paid';
         const terminal = ['released','owner_released','cancelled','owner_refunded'].includes(o.status);
         const buttonLabel = needsReview ? 'Review' : (terminal ? 'View' : 'Continue');
+        const dateLabel = orderDateLabel(o);
         return `<div class="listing"><div class="row" style="justify-content:space-between">
             <div><strong>${Number(o.amount_gd).toLocaleString()} G$</strong> for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}
-            <div class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</div>
+            <div class="order-meta">
+                <span class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</span>
+                ${dateLabel?`<span class="order-date">${dateLabel}</span>`:''}
+            </div>
             ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
             <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
             <div style="margin-top:.4rem"><button type="button" class="btn ${needsReview?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${buttonLabel}</button></div></div>
@@ -475,10 +493,11 @@ async function openOrderRoom(orderId){
         actions+=`<button type="button" class="btn btn-red btn-sm" onclick="sellerReject(${o.id})">Reject (to admin)</button>`;
     }
     const body=document.getElementById('orderModalBody');
+    const modalDateLabel = orderDateLabel(o);
     body.innerHTML=`<div class="row" style="justify-content:space-between"><h3>Order #${o.id} <span class="badge badge-${o.status}">${o.status}</span></h3>
         <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('orderModal')">✕</button></div>
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
-        Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
+        Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}${modalDateLabel?`<br>${modalDateLabel}`:''}</div>
         ${isBuyer?buyerNextSteps(o, proofs):''}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
