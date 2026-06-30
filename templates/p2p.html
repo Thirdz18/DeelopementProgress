@@ -83,6 +83,12 @@
         .review-callout { display:none; background:rgba(245,158,11,.11); border:1px solid rgba(245,158,11,.26); color:#fde68a; border-radius:12px; padding:.8rem 1rem; margin-bottom:.8rem; font-size:.86rem; }
         .review-callout strong { color:#fff7ed; }
         .tab-count { display:none; margin-left:.35rem; background:rgba(245,158,11,.18); color:#fcd34d; border:1px solid rgba(245,158,11,.30); border-radius:999px; padding:.05rem .4rem; font-size:.68rem; font-weight:800; }
+        .tx-proof { background:rgba(16,185,129,.10); border:1px solid rgba(16,185,129,.28); border-radius:12px; padding:.85rem 1rem; margin:.75rem 0; }
+        .tx-proof strong { color:#bbf7d0; }
+        .tx-proof-row { margin-top:.35rem; color:rgba(255,255,255,.72); font-size:.82rem; overflow-wrap:anywhere; }
+        .tx-proof code { color:#d1fae5; font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; font-size:.78rem; }
+        .tx-proof a { color:#86efac; font-weight:800; text-decoration:none; }
+        .tx-proof a:hover { text-decoration:underline; }
     </style>
     <script src="{{ url_for('static', filename='js/wc-bridge.js', v=ASSET_VERSION) }}"></script>
     <script>
@@ -246,7 +252,12 @@ async function api(url,opts){
     if(!res.ok && data && !data.error) data.error = 'HTTP '+res.status;
     return data;
 }
-function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
+function txHashLink(tx, label='View on CeloScan ↗'){
+    const safeTx = String(tx || '').trim();
+    if(!safeTx) return '';
+    return `<a href="https://celoscan.io/tx/${encodeURIComponent(safeTx)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+}
+function scan(tx){ return txHashLink(tx, 'View ↗'); }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function escapeAttr(v){ return escapeHtml(v).replace(/`/g, '&#96;'); }
 async function copyPaymentDetail(value, btn){
@@ -278,6 +289,21 @@ function orderDateLabel(o){
     const updated = formatOrderDate(o.updated_at);
     if(created && updated && o.updated_at !== o.created_at) return `Opened ${created} · Updated ${updated}`;
     return created ? `Opened ${created}` : '';
+}
+function releaseProofPanel(o){
+    const releaseTx = o.release_tx_hash;
+    if(!releaseTx || !['released','owner_released'].includes(o.status)) return '';
+    const releasedBy = o.status === 'owner_released' ? 'admin review' : 'seller approval';
+    return `<div class="tx-proof">
+        <strong>✅ Release proof</strong>
+        <div class="tx-proof-row">G$ was released to buyer wallet <code>${escapeHtml(o.buyer_wallet)}</code> via ${releasedBy}.</div>
+        <div class="tx-proof-row">Transaction hash: <code>${escapeHtml(releaseTx)}</code></div>
+        <div class="tx-proof-row">${txHashLink(releaseTx, 'Open transaction on CeloScan ↗')}</div>
+    </div>`;
+}
+function compactReleaseProof(o){
+    if(!o.release_tx_hash || !['released','owner_released'].includes(o.status)) return '';
+    return `<div class="muted" style="margin-top:.25rem;color:#86efac">Released to buyer ${shortAddr(o.buyer_wallet)} · ${txHashLink(o.release_tx_hash, 'TX proof ↗')}</div>`;
 }
 function buyerNextSteps(o, proofs){
     const hasProof = proofs && proofs.length;
@@ -481,7 +507,7 @@ async function loadOrders(role){
                 <span class="muted">${role==='buyer'?'Seller '+shortAddr(o.seller_wallet):'Buyer '+shortAddr(o.buyer_wallet)}</span>
                 ${dateLabel?`<span class="order-date">${dateLabel}</span>`:''}
             </div>
-            ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}</div>
+            ${needsReview?'<div class="muted" style="color:#fcd34d;margin-top:.25rem">Needs your review: approve/release or reject</div>':''}${compactReleaseProof(o)}</div>
             <div style="text-align:right"><span class="badge badge-${o.status}">${o.status}</span>
             <div style="margin-top:.4rem"><button type="button" class="btn ${needsReview?'btn-primary':'btn-outline'} btn-sm" onclick="openOrderRoom(${o.id})">${buttonLabel}</button></div></div>
             </div></div>`;
@@ -530,6 +556,7 @@ async function openOrderRoom(orderId){
         <div class="muted" style="margin:.4rem 0">${Number(o.amount_gd).toLocaleString()} G$ for ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}<br>
         Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}${modalDateLabel?`<br>${modalDateLabel}`:''}</div>
         ${isBuyer?buyerNextSteps(o, proofs):''}
+        ${releaseProofPanel(o)}
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
         <div><strong>Proof of payment</strong>${isBuyer&&['open','paid'].includes(o.status)?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
@@ -660,7 +687,8 @@ async function loadReviewQueue(){
             <strong>Order #${o.id} <span class="badge badge-${o.status}">${o.status}</span></strong>
             <span class="muted">${Number(o.amount_gd).toLocaleString()} G$ · ${Number(o.pay_amount).toLocaleString(undefined,{maximumFractionDigits:4})} ${o.pay_currency}</span></div>
             <div class="muted" style="margin:.3rem 0">Buyer ${shortAddr(o.buyer_wallet)} · Seller ${shortAddr(o.seller_wallet)}</div>
-            ${o.reject_reason?`<div class="alert alert-error" style="display:block">Reject reason: ${o.reject_reason}</div>`:''}
+            ${o.reject_reason?`<div class="alert alert-error" style="display:block">Reject reason: ${escapeHtml(o.reject_reason)}</div>`:''}
+            ${releaseProofPanel(o)}
             <div><strong>Proof</strong>${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${p.reference}</div>`:''}</div>`).join(''):'<div class="muted">No proof uploaded</div>'}</div>
             <div style="margin-top:.5rem"><strong>Chat</strong><div class="chat">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===o.buyer_wallet.toLowerCase()?'them':'me'}">${shortAddr(m.sender_wallet)}: ${m.body}</div>`).join('')||'<span class="muted">No messages</span>'}</div></div>
             <div class="row" style="margin-top:.6rem">
