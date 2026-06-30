@@ -59,6 +59,7 @@
         .msg { padding:.4rem .7rem; border-radius:10px; font-size:.82rem; max-width:80%; }
         .msg.me { background:rgba(124,58,237,.25); align-self:flex-end; }
         .msg.them { background:rgba(255,255,255,.06); align-self:flex-start; }
+        .chat-status { font-size:.72rem; color:rgba(255,255,255,.42); margin-left:.4rem; font-weight:500; }
         .proof-img { max-width:240px; border-radius:10px; border:1px solid rgba(255,255,255,.12); margin-top:.4rem; }
         .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; padding:1rem; }
         .modal.open { display:flex; }
@@ -447,6 +448,9 @@ async function cancelAd(id,onchain){
 
 // ── Orders ──
 let currentOrderRole='buyer';
+let activeOrderRoomId=null;
+let chatPollTimer=null;
+let lastChatSignature='';
 document.getElementById('ordBuyer').onclick=()=>{currentOrderRole='buyer';loadOrders('buyer');};
 document.getElementById('ordSeller').onclick=()=>{currentOrderRole='seller';loadOrders('seller');};
 async function loadOrders(role){
@@ -496,6 +500,7 @@ async function refreshSellerReviewBadge(){
 }
 
 async function openOrderRoom(orderId){
+    stopChatPolling();
     const res=await api('/p2p/api/orders/'+orderId);
     if(!res.success){ showAlert('error',res.error||'Failed'); return; }
     const o=res.order, isBuyer=o.buyer_wallet.toLowerCase()===WALLET.toLowerCase(), isSeller=o.seller_wallet.toLowerCase()===WALLET.toLowerCase();
@@ -528,15 +533,57 @@ async function openOrderRoom(orderId){
         <div class="card" style="margin:.7rem 0"><strong>Seller payment details</strong><div style="margin-top:.35rem">${paymentMethodsHtml}</div></div>
         ${o.reject_reason?`<div class="alert alert-error" style="display:block">Seller rejected: ${escapeHtml(o.reject_reason)}</div>`:''}
         <div><strong>Proof of payment</strong>${isBuyer&&['open','paid'].includes(o.status)?`<div class="row" style="margin:.45rem 0"><input id="proofReference" placeholder="Reference no. / transaction ID (optional)"><label class="btn btn-outline btn-sm" style="cursor:pointer;white-space:nowrap">Choose receipt<input type="file" accept="image/*" style="display:none" onchange="uploadProof(${o.id},this)"></label></div>`:''}<div id="proofList">${proofs.length?proofs.map(p=>`<div><img class="proof-img" src="${p.image_url}">${p.reference?`<div class="muted">Ref: ${escapeHtml(p.reference)}</div>`:''}</div>`).join(''):'<div class="muted">None uploaded yet</div>'}</div></div>
-        <div style="margin-top:.7rem"><strong>Chat</strong>
-        <div class="chat" id="chatBox">${msgs.map(m=>`<div class="msg ${m.sender_wallet.toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${m.body}</div>`).join('')}</div>
+        <div style="margin-top:.7rem"><strong>Chat</strong><span class="chat-status" id="chatStatus">Live updates on</span>
+        <div class="chat" id="chatBox"></div>
         <div class="row"><input id="chatInput" placeholder="Message…"><button type="button" class="btn btn-outline btn-sm" onclick="sendMsg(${o.id})">Send</button></div></div>
         <div id="roomAlert" class="alert"></div>
         <div class="row" style="margin-top:.7rem">${actions}</div>`;
     document.getElementById('orderModal').classList.add('open');
-    const c=document.getElementById('chatBox'); c.scrollTop=c.scrollHeight;
+    activeOrderRoomId=orderId;
+    renderChatMessages(msgs, true);
+    startChatPolling(orderId);
 }
 function roomAlert(t,m){ const el=document.getElementById('roomAlert'); el.className='alert alert-'+t; el.style.display='block'; el.innerHTML=m; }
+function chatSignature(messages){
+    return (messages||[]).map(m=>`${m.id || ''}:${m.created_at || ''}:${m.sender_wallet || ''}:${m.body || ''}`).join('|');
+}
+function renderChatMessages(messages, forceScroll=false){
+    const c=document.getElementById('chatBox');
+    if(!c) return false;
+    const signature=chatSignature(messages);
+    if(signature===lastChatSignature) return false;
+    const shouldStickToBottom = forceScroll || (c.scrollHeight - c.scrollTop - c.clientHeight < 48);
+    c.innerHTML=(messages||[]).map(m=>`<div class="msg ${(m.sender_wallet||'').toLowerCase()===WALLET.toLowerCase()?'me':'them'}">${escapeHtml(m.body)}</div>`).join('');
+    lastChatSignature=signature;
+    if(shouldStickToBottom) c.scrollTop=c.scrollHeight;
+    return true;
+}
+function setChatStatus(text){
+    const el=document.getElementById('chatStatus');
+    if(el) el.textContent=text;
+}
+async function refreshOrderChat(orderId){
+    if(activeOrderRoomId!==orderId || !document.getElementById('orderModal').classList.contains('open')) return;
+    try{
+        const res=await api('/p2p/api/orders/'+orderId+'/messages');
+        if(!res.success) throw new Error(res.error||'Failed to refresh chat');
+        const changed=renderChatMessages(res.messages||[]);
+        setChatStatus(changed ? 'New messages loaded' : 'Live updates on');
+    }catch(e){
+        setChatStatus('Reconnecting…');
+    }
+}
+function startChatPolling(orderId){
+    lastChatSignature='';
+    refreshOrderChat(orderId);
+    chatPollTimer=setInterval(()=>refreshOrderChat(orderId), 2500);
+}
+function stopChatPolling(){
+    if(chatPollTimer) clearInterval(chatPollTimer);
+    chatPollTimer=null;
+    activeOrderRoomId=null;
+    lastChatSignature='';
+}
 
 async function markPaid(id,onchain){
     try{
@@ -599,7 +646,7 @@ async function sellerReject(id){
 async function sendMsg(id){
     const inp=document.getElementById('chatInput'); const body=inp.value.trim(); if(!body) return;
     const r=await api('/p2p/api/orders/'+id+'/messages',{method:'POST',body:JSON.stringify({body})});
-    if(r.success){ inp.value=''; openOrderRoom(id); }
+    if(r.success){ inp.value=''; await refreshOrderChat(id); setChatStatus('Sent'); }
 }
 
 // ── Admin review ──
@@ -630,8 +677,8 @@ async function adminAct(id,action){
     else showAlert('error',r.error||'Failed');
 }
 
-function closeModal(id){ document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{ if(e.target===m) m.classList.remove('open'); });
+function closeModal(id){ document.getElementById(id).classList.remove('open'); if(id==='orderModal') stopChatPolling(); }
+document.querySelectorAll('.modal').forEach(m=>m.onclick=e=>{ if(e.target===m) closeModal(m.id); });
 
 // init
 loadListings();
