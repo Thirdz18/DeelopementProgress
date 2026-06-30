@@ -99,6 +99,7 @@ ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS pay_currency       VARCHAR(8);
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS fiat_currency      VARCHAR(8); -- legacy alias used by early deployments
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS payment_method_id  BIGINT;
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS payment_method     TEXT; -- legacy text column used by early deployments
+ALTER TABLE p2p_orders ALTER COLUMN payment_method TYPE TEXT; -- widen legacy varchar(50) installs
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS status             VARCHAR(20) DEFAULT 'open';
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS reject_reason      TEXT;
 ALTER TABLE p2p_orders ADD COLUMN IF NOT EXISTS reviewed_by        VARCHAR(42);
