@@ -65,6 +65,14 @@
         .modal-box { background:#15102e; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:1.3rem; max-width:560px; width:100%; max-height:90vh; overflow-y:auto; }
         .muted { color:rgba(255,255,255,.45); font-size:.8rem; }
         .pm-tag { display:inline-block; background:rgba(124,58,237,.12); border:1px solid rgba(124,58,237,.25); border-radius:8px; padding:.2rem .55rem; font-size:.74rem; margin:.15rem .2rem 0 0; }
+        .pm-choice { display:flex; align-items:center; gap:.45rem; width:100%; max-width:100%; padding:.55rem .75rem; margin:.25rem 0; }
+        .pm-choice input { width:auto; flex:0 0 auto; }
+        .pm-text { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; line-height:1.35; }
+        .pm-copy-btn { flex:0 0 auto; padding:.28rem .55rem; border-radius:8px; border:1px solid rgba(167,139,250,.35); background:rgba(124,58,237,.18); color:#ddd6fe; font-size:.72rem; font-weight:800; cursor:pointer; }
+        .pm-copy-btn:hover { background:rgba(124,58,237,.32); color:#fff; }
+        .pm-copy-btn.copied { border-color:rgba(16,185,129,.45); background:rgba(16,185,129,.18); color:#6ee7b7; }
+        .pm-detail-row { display:flex; align-items:center; gap:.45rem; max-width:100%; margin:.25rem .25rem 0 0; }
+        .pm-detail-row .pm-tag { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; margin:0; }
         .next-steps { background:rgba(99,102,241,.10); border:1px solid rgba(99,102,241,.25); border-radius:12px; padding:.8rem 1rem; margin:.75rem 0; }
         .next-steps ol { margin:.45rem 0 0 1.1rem; padding:0; color:rgba(255,255,255,.78); font-size:.84rem; line-height:1.55; }
         .next-steps li { margin:.25rem 0; }
@@ -239,6 +247,24 @@ async function api(url,opts){
 }
 function scan(tx){ return `<a href="https://celoscan.io/tx/${tx}" target="_blank" style="color:#86efac">View ↗</a>`; }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function escapeAttr(v){ return escapeHtml(v).replace(/`/g, '&#96;'); }
+async function copyPaymentDetail(value, btn){
+    const text = String(value ?? '').trim();
+    if(!text) return;
+    try{
+        if(navigator.clipboard && window.isSecureContext){
+            await navigator.clipboard.writeText(text);
+        }else{
+            const ta=document.createElement('textarea');
+            ta.value=text; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.opacity='0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+        }
+        if(btn){ const old=btn.textContent; btn.textContent='Copied'; btn.classList.add('copied'); setTimeout(()=>{btn.textContent=old||'Copy'; btn.classList.remove('copied');},1400); }
+    }catch(e){ showAlert('error','Could not copy. Please select and copy manually.'); }
+}
+function paymentMethodDetail(p){ return (p.details && (p.details.account || p.details.address || p.details.number)) || ''; }
+function paymentMethodText(p){ const detail=paymentMethodDetail(p); return `${p.label||p.kind}${detail?': '+detail:''}`; }
+function paymentCopyButton(detail){ return detail ? `<button type="button" class="pm-copy-btn" data-copy-detail="${escapeAttr(detail)}" onclick="event.preventDefault();event.stopPropagation();copyPaymentDetail(this.dataset.copyDetail, this)"><i class="fa-regular fa-copy"></i> Copy</button>` : ''; }
 function formatDeadline(v){ if(!v) return ''; const d=new Date(v); if(Number.isNaN(d.getTime())) return ''; return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }
 function formatOrderDate(v){
     if(!v) return '';
@@ -306,9 +332,9 @@ async function openBuyModal(l){
     const paymentMethods = (pms.success&&pms.payment_methods.length) ? pms.payment_methods : [];
     const pmHtml = paymentMethods.length
         ? `<div class="muted" style="margin-bottom:.35rem">Choose where you will pay the seller:</div>${paymentMethods.map((p,i)=>{
-            const detail=(p.details&&(p.details.account||p.details.address||p.details.number))||'';
-            const text=`${p.label||p.kind}${detail?': '+detail:''}`;
-            return `<label class="pm-tag" style="cursor:pointer"><input type="radio" name="buyPaymentMethod" value="${p.id}" ${i===0?'checked':''}> ${escapeHtml(text)}</label>`;
+            const detail=paymentMethodDetail(p);
+            const text=paymentMethodText(p);
+            return `<label class="pm-tag pm-choice" style="cursor:pointer"><input type="radio" name="buyPaymentMethod" value="${p.id}" ${i===0?'checked':''}><span class="pm-text">${escapeHtml(text)}</span>${paymentCopyButton(detail)}</label>`;
         }).join('')}`
         : '<span class="muted">No payment methods listed</span>';
     const body=document.getElementById('buyModalBody');
@@ -476,7 +502,7 @@ async function openOrderRoom(orderId){
     const proofs=res.proofs||[], msgs=res.messages||[];
     const pms = await api('/p2p/api/payment-methods?seller='+o.seller_wallet);
     const paymentMethodsHtml = (pms.success&&pms.payment_methods.length)
-        ? pms.payment_methods.map(p=>`<span class="pm-tag">${escapeHtml(p.label||p.kind)}: ${escapeHtml((p.details&&(p.details.account||p.details.address))||'')}</span>`).join('')
+        ? pms.payment_methods.map(p=>{ const detail=paymentMethodDetail(p); return `<div class="pm-detail-row"><span class="pm-tag"><strong>${escapeHtml(p.label||p.kind)}</strong>${detail?`: ${escapeHtml(detail)}`:''}</span>${paymentCopyButton(detail)}</div>`; }).join('')
         : '<span class="muted">Seller has not listed payment details. Message them in chat before paying.</span>';
     let actions='';
     if(isBuyer){
